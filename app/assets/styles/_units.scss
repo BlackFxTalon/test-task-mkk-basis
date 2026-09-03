@@ -1,0 +1,26 @@
+@use 'sass:math';
+@use 'sass:list';
+
+/// Converts a pixel value to rem, using the browser default font size.
+@function to-rem($value, $base-font-size: 16px) {
+  @if $value == 0 {
+    @return 0;
+  }
+
+  @if math.unit($value) != 'px' {
+    @error 'to-rem() accepts pixel values only. Received #{inspect($value)}.';
+  }
+
+  @return math.div($value, $base-font-size) * 1rem;
+}
+
+/// Writes a property with all its pixel values converted to rem.
+@mixin rem($property, $values...) {
+  $converted-values: ();
+
+  @each $value in $values {
+    $converted-values: list.append($converted-values, to-rem($value), space);
+  }
+
+  #{$property}: $converted-values;
+}

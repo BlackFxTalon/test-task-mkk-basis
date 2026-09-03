@@ -2,7 +2,7 @@
   <header class="app-header">
     <div class="app-header__content">
       <NuxtLink class="brand" to="/" aria-label="Заметки — на главную">
-        <img class="brand__logo" src="/logo.png" width="40" height="40" alt="">
+        <img class="brand__logo" src="/logo.png" width="40" height="40" alt="лого">
         <span class="brand__name">Заметки</span>
       </NuxtLink>
 
@@ -24,9 +24,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    width: min(100% - 2rem, var(--content-width));
-    min-height: 4.5rem;
+    @include rem(gap, 16px);
+    width: min(100% - #{to-rem(32px)}, var(--content-width));
+    @include rem(min-height, 72px);
     margin-inline: auto;
   }
 }
@@ -34,28 +34,28 @@
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  @include rem(gap, 12px);
   color: var(--color-text);
   text-decoration: none;
 
   &__logo {
-    width: 2.5rem;
-    height: 2.5rem;
+    @include rem(width, 40px);
+    @include rem(height, 40px);
     border-radius: 50%;
     box-shadow: var(--shadow-logo);
   }
 
   &__name {
-    font-size: 1.125rem;
+    @include rem(font-size, 18px);
     font-weight: 800;
     letter-spacing: -0.02em;
   }
 }
 
-@media (max-width: 36rem) {
+@media (max-width: #{to-rem(576px)}) {
   .app-header__content {
     flex-wrap: wrap;
-    padding-block: 0.75rem;
+    @include rem(padding-block, 12px);
   }
 }
 </style>

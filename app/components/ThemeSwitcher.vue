@@ -6,24 +6,12 @@ const themeOptions = [
 ] as const
 
 const { theme, setTheme } = useTheme()
-
-const indicatorStyle = computed(() => {
-  const activeIndex = Math.max(
-    themeOptions.findIndex(option => option.value === theme.value),
-    0,
-  )
-
-  return {
-    transform: `translate3d(${activeIndex * 3}rem, 0, 0)`,
-  }
-})
 </script>
 
 <template>
-  <div class="theme-switcher">
+  <div class="theme-switcher" :data-theme="theme">
     <span
       class="theme-switcher__indicator"
-      :style="indicatorStyle"
       aria-hidden="true"
     />
     <button
@@ -68,21 +56,24 @@ const indicatorStyle = computed(() => {
 
 <style scoped lang="scss">
 .theme-switcher {
+  --theme-option-size: #{to-rem(44px)};
+  --theme-option-gap: #{to-rem(4px)};
+
   position: relative;
   display: inline-grid;
-  grid-template-columns: repeat(3, 2.75rem);
-  gap: 0.25rem;
-  padding: 0.25rem;
+  grid-template-columns: repeat(3, var(--theme-option-size));
+  gap: var(--theme-option-gap);
+  @include rem(padding, 4px);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface-muted);
 
   &__indicator {
     position: absolute;
-    top: 0.25rem;
-    left: 0.25rem;
-    width: 2.75rem;
-    height: 2.75rem;
+    @include rem(top, 4px);
+    @include rem(left, 4px);
+    width: var(--theme-option-size);
+    height: var(--theme-option-size);
     border-radius: var(--radius-pill);
     background: var(--color-accent);
     box-shadow: var(--shadow-control);
@@ -91,13 +82,28 @@ const indicatorStyle = computed(() => {
     will-change: transform;
   }
 
+  &[data-theme='light'] &__indicator {
+    transform: translate3d(calc(var(--theme-option-size) + var(--theme-option-gap)), 0, 0);
+  }
+
+  &[data-theme='dark'] &__indicator {
+    transform: translate3d(
+      calc(
+        var(--theme-option-size) + var(--theme-option-gap) +
+        var(--theme-option-size) + var(--theme-option-gap)
+      ),
+      0,
+      0
+    );
+  }
+
   &__option {
     position: relative;
     z-index: 1;
     display: grid;
-    min-width: 2.75rem;
-    min-height: 2.75rem;
-    padding: 0.5rem;
+    min-width: var(--theme-option-size);
+    min-height: var(--theme-option-size);
+    @include rem(padding, 8px);
     place-items: center;
     border: 0;
     border-radius: var(--radius-pill);
@@ -118,8 +124,8 @@ const indicatorStyle = computed(() => {
   }
 
   &__icon {
-    width: 1.25rem;
-    height: 1.25rem;
+    @include rem(width, 20px);
+    @include rem(height, 20px);
     fill: none;
     stroke: currentColor;
     stroke-width: 1.8;

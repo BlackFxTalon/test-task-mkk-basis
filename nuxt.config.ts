@@ -4,6 +4,15 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   modules: ['@pinia/nuxt', '@nuxt/eslint'],
   css: ['@fontsource-variable/inter', '~/assets/styles/main.scss'],
+  vite: {
+    css: {
+      preprocessorOptions: {
+        scss: {
+          additionalData: '@use "~/assets/styles/units" as *;',
+        },
+      },
+    },
+  },
   typescript: {
     strict: true,
     typeCheck: true,
