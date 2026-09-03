@@ -20,7 +20,9 @@ const progressLabel = computed(() => {
 <template>
   <article class="note-card">
     <header class="note-card__header">
-      <h2>{{ note.title }}</h2>
+      <h2>
+        <NuxtLink :to="`/notes/${note.id}`">{{ note.title }}</NuxtLink>
+      </h2>
       <p>{{ progressLabel }}</p>
     </header>
 
@@ -41,6 +43,10 @@ const progressLabel = computed(() => {
     </ul>
 
     <p v-if="hiddenCount > 0" class="note-card__more">Ещё {{ hiddenCount }}</p>
+
+    <NuxtLink class="note-card__edit" :to="`/notes/${note.id}`">
+      Редактировать
+    </NuxtLink>
   </article>
 </template>
 
@@ -71,6 +77,16 @@ const progressLabel = computed(() => {
       overflow-wrap: anywhere;
       @include rem(font-size, 20px);
       line-height: 1.3;
+
+      a {
+        color: inherit;
+        text-decoration-color: var(--color-border);
+        text-underline-offset: 0.18em;
+
+        &:hover {
+          text-decoration-color: var(--color-accent-strong);
+        }
+      }
     }
 
     p {
@@ -125,6 +141,16 @@ const progressLabel = computed(() => {
   &__more {
     @include rem(font-size, 14px);
     font-weight: 700;
+  }
+
+  &__edit {
+    display: inline-flex;
+    min-height: #{to-rem(44px)};
+    align-items: center;
+    justify-self: start;
+    color: var(--color-accent-strong);
+    font-weight: 750;
+    text-underline-offset: 0.18em;
   }
 }
 

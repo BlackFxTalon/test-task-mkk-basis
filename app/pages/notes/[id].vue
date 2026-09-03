@@ -1,14 +1,10 @@
 <script setup lang="ts">
 const route = useRoute()
+const noteId = computed(() => Array.isArray(route.params.id) ? route.params.id[0] : route.params.id)
 
 useHead({ title: 'Редактирование заметки' })
 </script>
 
 <template>
-  <section class="placeholder-page" >
-    <p class="placeholder-page__eyebrow">Заметка {{ route.params.id }}</p>
-    <h1 class="page-title">Редактирование заметки</h1>
-    <p>Редактор появится на следующем этапе реализации.</p>
-    <NuxtLink class="button button--secondary" to="/">Вернуться к заметкам</NuxtLink>
-  </section>
+  <NoteEditor v-if="noteId" :note-id="noteId" />
 </template>
