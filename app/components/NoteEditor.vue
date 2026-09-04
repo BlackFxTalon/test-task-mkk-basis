@@ -3,6 +3,7 @@ import {
   NOTE_ITEM_MAX_LENGTH,
   NOTE_TITLE_MAX_LENGTH,
 } from '../domain/note'
+import type { HistoryOperationType, HistoryResult } from '../domain/noteHistory'
 import { useNoteEditorStore } from '../stores/noteEditor'
 import { useNotesStore } from '../stores/notes'
 
@@ -25,9 +26,11 @@ const isSaving = ref(false)
 const isNotFound = ref(false)
 const titleError = ref<string | null>(null)
 const formError = ref<string | null>(null)
+const historyMessage = ref<string | null>(null)
 const activeDialog = ref<'cancel' | 'delete' | 'navigation' | null>(null)
 const pendingNavigation = ref<string | null>(null)
 let allowNavigation = false
+let historyMessageTimeout: ReturnType<typeof setTimeout> | null = null
 
 const isEditing = computed(() => props.noteId !== undefined)
 const pageTitle = computed(() => isEditing.value ? 'Редактирование заметки' : 'Новая заметка')
@@ -112,6 +115,7 @@ const focusInvalidTitle = async (): Promise<void> => {
 const saveNote = async (): Promise<void> => {
   isSaving.value = true
   clearErrors()
+  editorStore.commitText()
 
   const result = props.noteId === undefined
     ? notesStore.createNote(editorStore.getInput())
@@ -145,10 +149,12 @@ const saveNote = async (): Promise<void> => {
 }
 
 const requestCancel = (): void => {
+  editorStore.commitText()
   activeDialog.value = 'cancel'
 }
 
 const requestDelete = (): void => {
+  editorStore.commitText()
   const note = props.noteId === undefined ? null : notesStore.getNote(props.noteId)
   if (!note) {
     isNotFound.value = true
@@ -205,6 +211,76 @@ const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
   event.returnValue = ''
 }
 
+const showHistoryMessage = (message: string): void => {
+  historyMessage.value = message
+  if (historyMessageTimeout !== null) {
+    clearTimeout(historyMessageTimeout)
+  }
+  historyMessageTimeout = setTimeout(() => {
+    historyMessage.value = null
+    historyMessageTimeout = null
+  }, 3000)
+}
+
+const historyOperationLabels: Record<HistoryOperationType, string> = {
+  title: 'Изменение заголовка',
+  'item-text': 'Изменение пункта',
+  'item-completed': 'Изменение отметки пункта',
+  'item-inserted': 'Добавление пункта',
+  'item-removed': 'Удаление пункта',
+}
+
+const formatHistoryMessage = (result: HistoryResult): string =>
+  `${historyOperationLabels[result.operation]} ${result.action === 'undo' ? 'отменено' : 'повторено'}.`
+
+const undo = (): void => {
+  const result = editorStore.undo()
+  if (result) {
+    showHistoryMessage(formatHistoryMessage(result))
+  }
+}
+
+const redo = (): void => {
+  const result = editorStore.redo()
+  if (result) {
+    showHistoryMessage(formatHistoryMessage(result))
+  }
+}
+
+const isTextEditingTarget = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement
+  && target.matches([
+    'textarea',
+    '[contenteditable="true"]',
+    'input:not([type])',
+    'input[type="text"]',
+    'input[type="search"]',
+    'input[type="email"]',
+    'input[type="url"]',
+    'input[type="tel"]',
+    'input[type="password"]',
+  ].join(', '))
+
+const handleHistoryShortcut = (event: KeyboardEvent): void => {
+  if ((!event.ctrlKey && !event.metaKey) || event.altKey || isTextEditingTarget(event.target)) {
+    return
+  }
+
+  const key = event.key.toLowerCase()
+  if (key === 'z' && event.shiftKey) {
+    event.preventDefault()
+    redo()
+  }
+  else if (key === 'z') {
+    event.preventDefault()
+    undo()
+  }
+  else if (key === 'y') {
+    event.preventDefault()
+    redo()
+  }
+}
+
 onBeforeRouteLeave((to) => {
   if (allowNavigation || !editorStore.isDirty) {
     return true
@@ -215,9 +291,16 @@ onBeforeRouteLeave((to) => {
   return false
 })
 
-onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload))
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('keydown', handleHistoryShortcut)
+})
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('keydown', handleHistoryShortcut)
+  if (historyMessageTimeout !== null) {
+    clearTimeout(historyMessageTimeout)
+  }
   editorStore.cancelSession()
 })
 </script>
@@ -267,6 +350,7 @@ onBeforeUnmount(() => {
             autocomplete="off"
             :class="{ 'field__input--invalid': Boolean(titleError) }"
             @input="clearErrors"
+            @blur="editorStore.commitText"
           >
           <p id="note-title-help" class="field__help">
             Обязательное поле, до {{ NOTE_TITLE_MAX_LENGTH }} символов.
@@ -299,6 +383,7 @@ onBeforeUnmount(() => {
                   :value="item.text"
                   :maxlength="NOTE_ITEM_MAX_LENGTH"
                   @input="updateItemText(index, $event)"
+                  @blur="editorStore.commitText"
                 >
                 <span :id="`note-item-count-${item.id}`" class="item-row__count">
                   {{ item.text.length }} / {{ NOTE_ITEM_MAX_LENGTH }}
@@ -321,6 +406,28 @@ onBeforeUnmount(() => {
 
         <p v-if="formError" class="note-form__error">{{ formError }}</p>
         <p v-if="notesStore.error" class="note-form__error">{{ notesStore.error }}</p>
+
+        <div class="history-controls">
+          <button
+            class="button button--secondary"
+            type="button"
+            :disabled="!editorStore.canUndo"
+            @click="undo"
+          >
+            Отменить изменение
+          </button>
+          <button
+            class="button button--secondary"
+            type="button"
+            :disabled="!editorStore.canRedo"
+            @click="redo"
+          >
+            Повторить изменение
+          </button>
+          <p v-if="historyMessage" class="history-controls__message">
+            {{ historyMessage }}
+          </p>
+        </div>
 
         <div class="note-form__actions">
           <button
@@ -444,6 +551,20 @@ onBeforeUnmount(() => {
       opacity: 0.55;
       transform: none;
     }
+  }
+}
+
+.history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  @include rem(gap, 12px);
+
+  &__message {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--color-text-muted);
+    font-weight: 650;
   }
 }
 

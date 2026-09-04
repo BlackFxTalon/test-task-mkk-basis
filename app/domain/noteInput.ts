@@ -15,6 +15,11 @@ export type NormalizedNoteInputResult =
   | { ok: true, title: string, items: Note['items'] }
   | { ok: false, reason: NoteValidationFailure }
 
+export const cloneNoteInput = (input: NoteInput): NoteInput => ({
+  title: input.title,
+  items: input.items.map(item => ({ ...item })),
+})
+
 export const normalizeNoteInputForComparison = (input: NoteInput): NoteInput => ({
   title: input.title.trim(),
   items: input.items
