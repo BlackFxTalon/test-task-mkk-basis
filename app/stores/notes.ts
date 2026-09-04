@@ -1,22 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import type { Note, NotesRepository } from '../domain/note'
 import {
-  NOTE_ITEM_MAX_LENGTH,
-  NOTE_TITLE_MAX_LENGTH,
-  type Note,
-  type NotesRepository,
-} from '../domain/note'
+  areNoteInputsEqual,
+  normalizeNoteInput,
+  type NoteInput,
+  type NoteValidationFailure,
+} from '../domain/noteInput'
 import { browserNotesRepository } from '../repositories/browserNotesRepository'
-
-export interface NoteInput {
-  title: string
-  items: Note['items']
-}
-
-type NoteValidationFailure = 'title-required' | 'title-too-long' | 'item-too-long'
-type NormalizedNoteInputResult =
-  | { ok: true, title: string, items: Note['items'] }
-  | { ok: false, reason: NoteValidationFailure }
 
 export type CreateNoteResult =
   | { ok: true, note: Note }
@@ -28,6 +19,10 @@ export type UpdateNoteResult =
     ok: false
     reason: 'not-found' | 'unchanged' | NoteValidationFailure | 'persistence'
   }
+
+export type DeleteNoteResult =
+  | { ok: true, note: Note }
+  | { ok: false, reason: 'not-found' | 'persistence' }
 
 export interface NotesStoreDependencies {
   repository: NotesRepository
@@ -42,36 +37,6 @@ const cloneNote = (note: Note): Note => ({
   ...note,
   items: note.items.map(item => ({ ...item })),
 })
-
-const normalizeItems = (items: Note['items']): Note['items'] =>
-  items
-    .map(item => ({ ...item, text: item.text.trim() }))
-    .filter(item => item.text.length > 0)
-
-const normalizeNoteInput = (input: NoteInput): NormalizedNoteInputResult => {
-  const title = input.title.trim()
-  if (!title) {
-    return { ok: false, reason: 'title-required' }
-  }
-  if (title.length > NOTE_TITLE_MAX_LENGTH) {
-    return { ok: false, reason: 'title-too-long' }
-  }
-  if (input.items.some(item => item.text.trim().length > NOTE_ITEM_MAX_LENGTH)) {
-    return { ok: false, reason: 'item-too-long' }
-  }
-
-  return { ok: true, title, items: normalizeItems(input.items) }
-}
-
-const areItemsEqual = (left: Note['items'], right: Note['items']): boolean =>
-  left.length === right.length
-  && left.every((item, index) => {
-    const other = right[index]
-    return other !== undefined
-      && item.id === other.id
-      && item.text === other.text
-      && item.completed === other.completed
-  })
 
 export const createNotesStore = (dependencies: NotesStoreDependencies) =>
   defineStore('notes', () => {
@@ -98,12 +63,12 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       return note ? cloneNote(note) : null
     }
 
-    const commitNotes = (nextNotes: Note[]): boolean => {
+    const commitNotes = (nextNotes: Note[], failureMessage: string): boolean => {
       try {
         dependencies.repository.write(nextNotes)
       }
       catch {
-        error.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.'
+        error.value = failureMessage
         return false
       }
 
@@ -114,12 +79,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
 
     const hasNoteChanged = (id: string, input: NoteInput): boolean => {
       const existingNote = notes.value.find(note => note.id === id)
-      if (!existingNote) {
-        return false
-      }
-
-      return input.title.trim() !== existingNote.title
-        || !areItemsEqual(normalizeItems(input.items), existingNote.items)
+      return existingNote ? !areNoteInputsEqual(input, existingNote) : false
     }
 
     const createNote = (input: NoteInput): CreateNoteResult => {
@@ -139,7 +99,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       }
       const nextNotes = sortByUpdatedAt([note, ...notes.value.map(cloneNote)])
 
-      if (!commitNotes(nextNotes)) {
+      if (!commitNotes(nextNotes, 'Не удалось сохранить заметку. Попробуйте ещё раз.')) {
         return { ok: false, reason: 'persistence' }
       }
 
@@ -157,10 +117,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
         return normalized
       }
 
-      if (
-        normalized.title === existingNote.title
-        && areItemsEqual(normalized.items, existingNote.items)
-      ) {
+      if (areNoteInputsEqual(normalized, existingNote)) {
         return { ok: false, reason: 'unchanged' }
       }
 
@@ -175,11 +132,28 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
         notes.value.map(note => note.id === id ? updatedNote : cloneNote(note)),
       )
 
-      if (!commitNotes(nextNotes)) {
+      if (!commitNotes(nextNotes, 'Не удалось сохранить заметку. Попробуйте ещё раз.')) {
         return { ok: false, reason: 'persistence' }
       }
 
       return { ok: true, note: updatedNote }
+    }
+
+    const deleteNote = (id: string): DeleteNoteResult => {
+      const note = notes.value.find(candidate => candidate.id === id)
+      if (!note) {
+        return { ok: false, reason: 'not-found' }
+      }
+
+      const nextNotes = notes.value
+        .filter(candidate => candidate.id !== id)
+        .map(cloneNote)
+
+      if (!commitNotes(nextNotes, 'Не удалось удалить заметку. Попробуйте ещё раз.')) {
+        return { ok: false, reason: 'persistence' }
+      }
+
+      return { ok: true, note: cloneNote(note) }
     }
 
     return {
@@ -191,6 +165,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       hasNoteChanged,
       createNote,
       updateNote,
+      deleteNote,
     }
   })
 

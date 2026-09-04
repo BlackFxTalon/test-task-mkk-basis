@@ -2,9 +2,8 @@
 import {
   NOTE_ITEM_MAX_LENGTH,
   NOTE_TITLE_MAX_LENGTH,
-  type Note,
-  type TodoItem,
 } from '../domain/note'
+import { useNoteEditorStore } from '../stores/noteEditor'
 import { useNotesStore } from '../stores/notes'
 
 const props = defineProps<{
@@ -12,31 +11,45 @@ const props = defineProps<{
 }>()
 
 const notesStore = useNotesStore()
+const editorStore = useNoteEditorStore()
 const { announce } = useOperationStatus()
+const {
+  deletionDescription,
+  requestDeletion,
+  cancelDeletion,
+  confirmDeletion,
+} = useNoteDeletion()
 const titleInput = useTemplateRef<HTMLInputElement>('titleInput')
-const title = ref('')
-const items = ref<TodoItem[]>([])
 const isReady = ref(false)
 const isSaving = ref(false)
 const isNotFound = ref(false)
 const titleError = ref<string | null>(null)
 const formError = ref<string | null>(null)
+const activeDialog = ref<'cancel' | 'delete' | 'navigation' | null>(null)
+const pendingNavigation = ref<string | null>(null)
+let allowNavigation = false
 
 const isEditing = computed(() => props.noteId !== undefined)
 const pageTitle = computed(() => isEditing.value ? 'Редактирование заметки' : 'Новая заметка')
-const noteInput = computed(() => ({ title: title.value, items: items.value }))
+const title = computed({
+  get: () => editorStore.session?.title ?? '',
+  set: value => editorStore.setTitle(value),
+})
+const items = computed(() => editorStore.session?.items ?? [])
 const isSaveDisabled = computed(() =>
   isSaving.value
-  || (props.noteId !== undefined && !notesStore.hasNoteChanged(props.noteId, noteInput.value)),
-)
-const titleDescription = computed(() =>
-  titleError.value ? 'note-title-help note-title-error' : 'note-title-help',
+  || (isEditing.value && !editorStore.isDirty),
 )
 
-const populateEditor = (note: Note): void => {
-  title.value = note.title
-  items.value = note.items.map(item => ({ ...item }))
-}
+const dialogTitle = computed(() => activeDialog.value === 'delete'
+  ? 'Удалить заметку?'
+  : 'Выйти из редактора?')
+const dialogDescription = computed(() => activeDialog.value === 'delete'
+  ? deletionDescription.value
+  : 'Несохранённые изменения будут потеряны.')
+const dialogConfirmLabel = computed(() => activeDialog.value === 'delete'
+  ? 'Удалить заметку'
+  : 'Выйти без сохранения')
 
 onMounted(() => {
   if (!notesStore.isInitialized) {
@@ -49,15 +62,22 @@ onMounted(() => {
       isNotFound.value = true
     }
     else {
-      populateEditor(note)
+      editorStore.startSession({
+        noteId: note.id,
+        title: note.title,
+        items: note.items,
+      })
     }
+  }
+  else if (props.noteId === undefined && !notesStore.error) {
+    editorStore.startSession({ noteId: null, title: '', items: [] })
   }
 
   isReady.value = true
 })
 
 const addItem = (): void => {
-  items.value.push({
+  editorStore.addItem({
     id: crypto.randomUUID(),
     text: '',
     completed: false,
@@ -65,7 +85,17 @@ const addItem = (): void => {
 }
 
 const removeItem = (index: number): void => {
-  items.value.splice(index, 1)
+  editorStore.removeItem(index)
+  formError.value = null
+}
+
+const updateItemText = (index: number, event: Event): void => {
+  editorStore.setItemText(index, (event.target as HTMLInputElement).value)
+  formError.value = null
+}
+
+const updateItemCompleted = (index: number, event: Event): void => {
+  editorStore.setItemCompleted(index, (event.target as HTMLInputElement).checked)
   formError.value = null
 }
 
@@ -84,8 +114,8 @@ const saveNote = async (): Promise<void> => {
   clearErrors()
 
   const result = props.noteId === undefined
-    ? notesStore.createNote(noteInput.value)
-    : notesStore.updateNote(props.noteId, noteInput.value)
+    ? notesStore.createNote(editorStore.getInput())
+    : notesStore.updateNote(props.noteId, editorStore.getInput())
 
   if (!result.ok) {
     isSaving.value = false
@@ -109,8 +139,87 @@ const saveNote = async (): Promise<void> => {
   }
 
   announce(isEditing.value ? 'Изменения сохранены.' : 'Заметка создана.')
+  editorStore.cancelSession()
+  allowNavigation = true
   await navigateTo('/')
 }
+
+const requestCancel = (): void => {
+  activeDialog.value = 'cancel'
+}
+
+const requestDelete = (): void => {
+  const note = props.noteId === undefined ? null : notesStore.getNote(props.noteId)
+  if (!note) {
+    isNotFound.value = true
+    return
+  }
+
+  requestDeletion(note)
+  activeDialog.value = 'delete'
+}
+
+const closeDialog = (): void => {
+  if (activeDialog.value === 'delete') {
+    cancelDeletion()
+  }
+  activeDialog.value = null
+  pendingNavigation.value = null
+}
+
+const exitEditor = async (target: string): Promise<void> => {
+  editorStore.cancelSession()
+  allowNavigation = true
+  activeDialog.value = null
+  pendingNavigation.value = null
+  await navigateTo(target)
+}
+
+const confirmDialog = async (): Promise<void> => {
+  if (activeDialog.value === 'delete' && props.noteId !== undefined) {
+    const result = confirmDeletion()
+    if (!result?.ok) {
+      activeDialog.value = null
+      if (result?.reason === 'not-found') {
+        isNotFound.value = true
+      }
+      return
+    }
+
+    await exitEditor('/')
+    return
+  }
+
+  const target = activeDialog.value === 'navigation'
+    ? pendingNavigation.value ?? '/'
+    : '/'
+  await exitEditor(target)
+}
+
+const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
+  if (!editorStore.isDirty) {
+    return
+  }
+
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave((to) => {
+  if (allowNavigation || !editorStore.isDirty) {
+    return true
+  }
+
+  pendingNavigation.value = to.fullPath
+  activeDialog.value = 'navigation'
+  return false
+})
+
+onMounted(() => window.addEventListener('beforeunload', handleBeforeUnload))
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  editorStore.cancelSession()
+})
 </script>
 
 <template>
@@ -119,7 +228,7 @@ const saveNote = async (): Promise<void> => {
       Загружаем заметку…
     </p>
 
-    <div v-else-if="notesStore.error && !isNotFound" class="note-editor-page__state note-editor-page__state--error" role="alert">
+    <div v-else-if="notesStore.error && !isNotFound" class="note-editor-page__state note-editor-page__state--error">
       <h1>Не удалось открыть заметку</h1>
       <p>{{ notesStore.error }}</p>
       <NuxtLink class="button button--secondary" to="/">Вернуться к заметкам</NuxtLink>
@@ -156,8 +265,7 @@ const saveNote = async (): Promise<void> => {
             type="text"
             :maxlength="NOTE_TITLE_MAX_LENGTH"
             autocomplete="off"
-            :aria-describedby="titleDescription"
-            :aria-invalid="Boolean(titleError)"
+            :class="{ 'field__input--invalid': Boolean(titleError) }"
             @input="clearErrors"
           >
           <p id="note-title-help" class="field__help">
@@ -178,21 +286,19 @@ const saveNote = async (): Promise<void> => {
           <ol v-else class="items-editor__list">
             <li v-for="(item, index) in items" :key="item.id" class="item-row">
               <input
-                v-model="item.completed"
                 class="item-row__checkbox"
                 type="checkbox"
-                :aria-label="`Отметить пункт ${index + 1} выполненным`"
-                @change="formError = null"
+                :checked="item.completed"
+                @change="updateItemCompleted(index, $event)"
               >
               <div class="item-row__field">
                 <label :for="`note-item-${item.id}`">Пункт {{ index + 1 }}</label>
                 <input
                   :id="`note-item-${item.id}`"
-                  v-model="item.text"
                   type="text"
+                  :value="item.text"
                   :maxlength="NOTE_ITEM_MAX_LENGTH"
-                  :aria-describedby="`note-item-count-${item.id}`"
-                  @input="formError = null"
+                  @input="updateItemText(index, $event)"
                 >
                 <span :id="`note-item-count-${item.id}`" class="item-row__count">
                   {{ item.text.length }} / {{ NOTE_ITEM_MAX_LENGTH }}
@@ -201,7 +307,6 @@ const saveNote = async (): Promise<void> => {
               <button
                 class="item-row__remove"
                 type="button"
-                :aria-label="`Удалить пункт ${index + 1}`"
                 @click="removeItem(index)"
               >
                 Удалить
@@ -214,8 +319,8 @@ const saveNote = async (): Promise<void> => {
           </button>
         </fieldset>
 
-        <p v-if="formError" class="note-form__error" role="alert">{{ formError }}</p>
-        <p v-if="notesStore.error" class="note-form__error" role="alert">{{ notesStore.error }}</p>
+        <p v-if="formError" class="note-form__error">{{ formError }}</p>
+        <p v-if="notesStore.error" class="note-form__error">{{ notesStore.error }}</p>
 
         <div class="note-form__actions">
           <button
@@ -226,9 +331,30 @@ const saveNote = async (): Promise<void> => {
           >
             {{ isSaving ? 'Сохраняем…' : 'Сохранить' }}
           </button>
+          <button class="button button--secondary" type="button" @click="requestCancel">
+            Отменить редактирование
+          </button>
+          <button
+            v-if="isEditing"
+            class="button button--danger"
+            type="button"
+            @click="requestDelete"
+          >
+            Удалить заметку
+          </button>
         </div>
       </form>
     </template>
+
+    <ConfirmDialog
+      :open="activeDialog !== null"
+      :title="dialogTitle"
+      :description="dialogDescription"
+      :confirm-label="dialogConfirmLabel"
+      :destructive="activeDialog === 'delete'"
+      @cancel="closeDialog"
+      @confirm="confirmDialog"
+    />
   </section>
 </template>
 
@@ -350,7 +476,7 @@ const saveNote = async (): Promise<void> => {
     background: var(--color-background);
     font: inherit;
 
-    &[aria-invalid='true'] {
+    &.field__input--invalid {
       border-color: var(--color-danger);
     }
   }

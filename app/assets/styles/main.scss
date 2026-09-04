@@ -13,6 +13,7 @@
   --color-accent-strong: light-dark(#007eaf, #83edf6);
   --color-on-accent: #062029;
   --color-danger: light-dark(#c62828, #ff8a8a);
+  --color-on-danger: light-dark(#ffffff, #2d0b0b);
   --color-focus: light-dark(#006f9e, #66e6f3);
 
   @include rem('--content-width', 1152px);
@@ -102,6 +103,12 @@ img {
     color: var(--color-text);
     border-color: var(--color-border);
     background: var(--color-surface);
+  }
+
+  &--danger {
+    color: var(--color-on-danger);
+    background: var(--color-danger);
+    box-shadow: var(--shadow-control);
   }
 }
 

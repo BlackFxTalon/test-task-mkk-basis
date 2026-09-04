@@ -388,4 +388,49 @@ describe('notes store', () => {
     expect(store.notes).toEqual([existing])
     expect(store.error).toBe('Не удалось сохранить заметку. Попробуйте ещё раз.')
   })
+
+  it('deletes and persists an existing note', () => {
+    const existing: Note = {
+      id: 'existing',
+      title: 'Удалить',
+      items: [],
+      createdAt: '2026-09-01T10:00:00.000Z',
+      updatedAt: '2026-09-01T10:00:00.000Z',
+      revision: 1,
+    }
+    const repository = new InMemoryNotesRepository([existing])
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+    store.initialize()
+
+    const result = store.deleteNote('existing')
+
+    expect(result).toEqual({ ok: true, note: existing })
+    expect(store.notes).toEqual([])
+    expect(repository.storedNotes).toEqual([])
+    expect(repository.writeCalls).toBe(1)
+  })
+
+  it('keeps a note observable when deletion cannot be persisted', () => {
+    const existing: Note = {
+      id: 'existing',
+      title: 'Оставить',
+      items: [],
+      createdAt: '2026-09-01T10:00:00.000Z',
+      updatedAt: '2026-09-01T10:00:00.000Z',
+      revision: 1,
+    }
+    const repository = new InMemoryNotesRepository([existing])
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+    store.initialize()
+    repository.failWrites = true
+
+    const result = store.deleteNote('existing')
+
+    expect(result).toEqual({ ok: false, reason: 'persistence' })
+    expect(store.notes).toEqual([existing])
+    expect(repository.storedNotes).toEqual([existing])
+    expect(store.error).toBe('Не удалось удалить заметку. Попробуйте ещё раз.')
+  })
 })

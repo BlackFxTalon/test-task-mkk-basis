@@ -7,15 +7,23 @@ useHead({ title: 'Заметки' })
 const notesStore = useNotesStore()
 const { notes, isInitialized, error } = storeToRefs(notesStore)
 const { message } = useOperationStatus()
+const {
+  notePendingDeletion,
+  deletionDescription,
+  requestDeletion,
+  cancelDeletion,
+  confirmDeletion,
+} = useNoteDeletion()
 
 onMounted(() => {
   notesStore.initialize()
 })
+
 </script>
 
 <template>
   <section class="notes-page">
-    <p v-if="message" class="status-message" role="status" aria-live="polite">
+    <p v-if="message" class="status-message">
       {{ message }}
     </p>
 
@@ -33,16 +41,16 @@ onMounted(() => {
       </NuxtLink>
     </header>
 
-    <p v-if="!isInitialized" class="notes-page__state" role="status">
+    <p v-if="!isInitialized" class="notes-page__state">
       Загружаем заметки…
     </p>
 
-    <p v-else-if="error" class="notes-page__error" role="alert">
+    <p v-if="isInitialized && error" class="notes-page__error">
       {{ error }}
     </p>
 
-    <div v-else-if="notes.length === 0" class="empty-state">
-      <span class="empty-state__icon" aria-hidden="true">✦</span>
+    <div v-if="isInitialized && !error && notes.length === 0" class="empty-state">
+      <span class="empty-state__icon">✦</span>
       <h2>Заметок пока нет</h2>
       <p>Создайте первую заметку, чтобы собрать важное в одном месте.</p>
       <NuxtLink class="button button--primary" to="/notes/new">
@@ -50,9 +58,24 @@ onMounted(() => {
       </NuxtLink>
     </div>
 
-    <div v-else class="notes-grid">
-      <NoteCard v-for="note in notes" :key="note.id" :note="note" />
+    <div v-else-if="isInitialized && notes.length > 0" class="notes-grid">
+      <NoteCard
+        v-for="note in notes"
+        :key="note.id"
+        :note="note"
+        @delete="requestDeletion"
+      />
     </div>
+
+    <ConfirmDialog
+      :open="notePendingDeletion !== null"
+      title="Удалить заметку?"
+      :description="deletionDescription"
+      confirm-label="Удалить заметку"
+      destructive
+      @cancel="cancelDeletion"
+      @confirm="confirmDeletion"
+    />
   </section>
 </template>
 

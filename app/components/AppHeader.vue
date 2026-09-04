@@ -1,7 +1,7 @@
 <template>
   <header class="app-header">
     <div class="app-header__content">
-      <NuxtLink class="brand" to="/" aria-label="Заметки — на главную">
+      <NuxtLink class="brand" to="/">
         <img class="brand__logo" src="/logo.png" width="40" height="40" alt="лого">
         <span class="brand__name">Заметки</span>
       </NuxtLink>

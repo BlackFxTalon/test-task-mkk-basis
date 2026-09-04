@@ -5,6 +5,10 @@ const props = defineProps<{
   note: Note
 }>()
 
+const emit = defineEmits<{
+  delete: [note: Note]
+}>()
+
 const previewItems = computed(() => props.note.items.slice(0, 3))
 const hiddenCount = computed(() => Math.max(0, props.note.items.length - previewItems.value.length))
 const completedCount = computed(() => props.note.items.filter(item => item.completed).length)
@@ -35,7 +39,6 @@ const progressLabel = computed(() => {
         <input
           type="checkbox"
           :checked="item.completed"
-          :aria-label="item.completed ? `Выполнено: ${item.text}` : `Не выполнено: ${item.text}`"
           disabled
         >
         <span>{{ item.text }}</span>
@@ -44,9 +47,14 @@ const progressLabel = computed(() => {
 
     <p v-if="hiddenCount > 0" class="note-card__more">Ещё {{ hiddenCount }}</p>
 
-    <NuxtLink class="note-card__edit" :to="`/notes/${note.id}`">
-      Редактировать
-    </NuxtLink>
+    <div class="note-card__actions">
+      <NuxtLink class="note-card__edit" :to="`/notes/${note.id}`">
+        Редактировать
+      </NuxtLink>
+      <button class="note-card__delete" type="button" @click="emit('delete', note)">
+        Удалить
+      </button>
+    </div>
   </article>
 </template>
 
@@ -143,14 +151,34 @@ const progressLabel = computed(() => {
     font-weight: 700;
   }
 
-  &__edit {
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    @include rem(gap, 12px);
+  }
+
+  &__edit,
+  &__delete {
     display: inline-flex;
     min-height: #{to-rem(44px)};
     align-items: center;
-    justify-self: start;
-    color: var(--color-accent-strong);
+    justify-content: center;
+    @include rem(padding-inline, 8px);
     font-weight: 750;
+  }
+
+  &__edit {
+    color: var(--color-accent-strong);
     text-underline-offset: 0.18em;
+  }
+
+  &__delete {
+    border: 0;
+    color: var(--color-danger);
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
   }
 }
 

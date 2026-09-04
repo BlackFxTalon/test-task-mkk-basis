@@ -10,25 +10,20 @@ const { theme, setTheme } = useTheme()
 
 <template>
   <div class="theme-switcher" :data-theme="theme">
-    <span
-      class="theme-switcher__indicator"
-      aria-hidden="true"
-    />
+    <span class="theme-switcher__indicator" />
     <button
       v-for="option in themeOptions"
       :key="option.value"
       class="theme-switcher__option"
+      :class="{ 'theme-switcher__option--active': theme === option.value }"
       type="button"
-      :aria-label="`Тема: ${option.label}`"
       :title="option.label"
-      :aria-pressed="theme === option.value"
       @click="setTheme(option.value)"
     >
       <svg
         v-if="option.value === 'system'"
         class="theme-switcher__icon"
         viewBox="0 0 24 24"
-        aria-hidden="true"
       >
         <rect x="3" y="4" width="18" height="12" rx="2" />
         <path d="M8 20h8M12 16v4" />
@@ -37,7 +32,6 @@ const { theme, setTheme } = useTheme()
         v-else-if="option.value === 'light'"
         class="theme-switcher__icon"
         viewBox="0 0 24 24"
-        aria-hidden="true"
       >
         <circle cx="12" cy="12" r="4" />
         <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" />
@@ -46,7 +40,6 @@ const { theme, setTheme } = useTheme()
         v-else
         class="theme-switcher__icon"
         viewBox="0 0 24 24"
-        aria-hidden="true"
       >
         <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
       </svg>
@@ -113,11 +106,11 @@ const { theme, setTheme } = useTheme()
     font: inherit;
     transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 
-    &[aria-pressed='true'] {
+    &--active {
       color: var(--color-on-accent);
     }
 
-    &:hover:not([aria-pressed='true']) {
+    &:hover:not(.theme-switcher__option--active) {
       color: var(--color-text);
       background: var(--color-surface);
     }
