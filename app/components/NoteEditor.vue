@@ -2,9 +2,11 @@
 import {
   NOTE_ITEM_MAX_LENGTH,
   NOTE_TITLE_MAX_LENGTH,
+  type Note,
   type TodoItem,
 } from '../domain/note'
 import type { HistoryOperationType, HistoryResult } from '../domain/noteHistory'
+import { NOTES_STORAGE_KEY } from '../repositories/browserNotesRepository'
 import { useNoteEditorStore } from '../stores/noteEditor'
 import { useNotesStore } from '../stores/notes'
 
@@ -30,7 +32,7 @@ const isNotFound = ref(false)
 const titleError = ref<string | null>(null)
 const formError = ref<string | null>(null)
 const historyMessage = ref<string | null>(null)
-const activeDialog = ref<'cancel' | 'delete' | 'navigation' | 'recovery' | null>(null)
+const activeDialog = ref<'cancel' | 'delete' | 'navigation' | 'recovery' | 'conflict' | 'deleted' | 'deleted-recovery' | null>(null)
 const pendingNavigation = ref<string | null>(null)
 let allowNavigation = false
 let historyMessageTimeout: ReturnType<typeof setTimeout> | null = null
@@ -67,6 +69,24 @@ const DIALOG_TEXT: Record<NonNullable<typeof activeDialog.value>, { title: strin
     title: 'Восстановить черновик?',
     description: 'Для этой вкладки найдены несохранённые изменения. Их можно восстановить или удалить.',
     confirmLabel: 'Восстановить черновик',
+    cancelLabel: 'Удалить черновик',
+  },
+  conflict: {
+    title: 'Заметка изменена в другой вкладке',
+    description: 'Пока вы редактировали заметку, её сохранили в другой вкладке. Выберите, как поступить с вашими изменениями.',
+    confirmLabel: 'Продолжить редактирование',
+    cancelLabel: 'Продолжить редактирование',
+  },
+  deleted: {
+    title: 'Заметка удалена в другой вкладке',
+    description: 'Заметку удалили, пока вы её редактировали. Ваша работа осталась в этом редакторе: сохраните её как новую заметку или выйдите без сохранения.',
+    confirmLabel: 'Выйти без сохранения',
+    cancelLabel: 'Продолжить редактирование',
+  },
+  'deleted-recovery': {
+    title: 'Заметка удалена, но есть несохранённая работа',
+    description: 'Эта заметка больше не существует, но для вкладки найден её несохранённый черновик. Его можно восстановить как новую заметку или удалить.',
+    confirmLabel: 'Восстановить как новую заметку',
     cancelLabel: 'Удалить черновик',
   },
 }
@@ -125,7 +145,14 @@ const initializeEditor = async (): Promise<void> => {
   if (props.noteId !== undefined && !notesStore.error) {
     const note = notesStore.getNote(props.noteId)
     if (!note) {
-      isNotFound.value = true
+      const orphanedDraft = editorStore.offerDraftForDeletedNote(props.noteId, requestedSessionId ?? null)
+      if (orphanedDraft) {
+        sessionId = orphanedDraft.sessionId
+        activeDialog.value = 'deleted-recovery'
+      }
+      else {
+        isNotFound.value = true
+      }
     }
     else {
       sessionId = await startOwnedSession({
@@ -151,7 +178,7 @@ const initializeEditor = async (): Promise<void> => {
     }, { replace: true })
   }
 
-  if (editorStore.recoveryDraft) {
+  if (editorStore.recoveryDraft && activeDialog.value === null) {
     activeDialog.value = 'recovery'
   }
   isReady.value = true
@@ -194,34 +221,47 @@ const focusInvalidTitle = async (): Promise<void> => {
   titleInput.value?.focus()
 }
 
+type SaveFailureReason = 'title-required' | 'title-too-long' | 'item-too-long' | 'persistence'
+
+const handleSaveValidationFailure = async (reason: SaveFailureReason): Promise<void> => {
+  if (reason === 'title-required') {
+    titleError.value = 'Введите название заметки.'
+    await focusInvalidTitle()
+  }
+  else if (reason === 'title-too-long') {
+    titleError.value = `Название не должно быть длиннее ${NOTE_TITLE_MAX_LENGTH} символов.`
+    await focusInvalidTitle()
+  }
+  else if (reason === 'item-too-long') {
+    formError.value = `Текст пункта не должен быть длиннее ${NOTE_ITEM_MAX_LENGTH} символов.`
+  }
+  else {
+    formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.'
+  }
+}
+
 const saveNote = async (): Promise<void> => {
   isSaving.value = true
   clearErrors()
   editorStore.commitText()
 
-  const result = props.noteId === undefined
+  const sessionNoteId = editorStore.session?.noteId ?? null
+  const baselineRevision = editorStore.session?.baselineRevision ?? undefined
+  const result = sessionNoteId === null
     ? notesStore.createNote(editorStore.getInput())
-    : notesStore.updateNote(props.noteId, editorStore.getInput())
+    : notesStore.updateNote(sessionNoteId, editorStore.getInput(), { baselineRevision })
 
   if (!result.ok && result.reason !== 'unchanged') {
     isSaving.value = false
 
-    if (result.reason === 'title-required') {
-      titleError.value = 'Введите название заметки.'
-      await focusInvalidTitle()
+    if (result.reason === 'not-found') {
+      activeDialog.value = 'deleted'
     }
-    else if (result.reason === 'title-too-long') {
-      titleError.value = `Название не должно быть длиннее ${NOTE_TITLE_MAX_LENGTH} символов.`
-      await focusInvalidTitle()
+    else if (result.reason === 'revision-conflict') {
+      activeDialog.value = 'conflict'
     }
-    else if (result.reason === 'item-too-long') {
-      formError.value = `Текст пункта не должен быть длиннее ${NOTE_ITEM_MAX_LENGTH} символов.`
-    }
-    else if (result.reason === 'not-found') {
-      isNotFound.value = true
-    }
-    else if (result.reason === 'persistence') {
-      formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.'
+    else {
+      await handleSaveValidationFailure(result.reason)
     }
 
     return
@@ -233,7 +273,7 @@ const saveNote = async (): Promise<void> => {
   }
 
   if (result.ok) {
-    announce(isEditing.value ? 'Изменения сохранены.' : 'Заметка создана.')
+    announce(sessionNoteId === null ? 'Заметка создана.' : 'Изменения сохранены.')
   }
   allowNavigation = true
   await navigateTo('/')
@@ -260,6 +300,15 @@ const closeDialog = (): void => {
   if (activeDialog.value === 'delete') {
     cancelDeletion()
   }
+  else if (activeDialog.value === 'deleted-recovery') {
+    if (!editorStore.discardRecoveryDraft()) {
+      return
+    }
+    activeDialog.value = null
+    pendingNavigation.value = null
+    isNotFound.value = true
+    return
+  }
   else if (activeDialog.value === 'recovery' && !editorStore.discardRecoveryDraft()) {
     return
   }
@@ -284,6 +333,19 @@ const confirmDialog = async (): Promise<void> => {
     return
   }
 
+  if (activeDialog.value === 'deleted-recovery') {
+    if (editorStore.restoreOrphanedDraftAsNew()) {
+      activeDialog.value = null
+      announce('Черновик восстановлен. Сохраните его как новую заметку.')
+    }
+    return
+  }
+
+  if (activeDialog.value === 'deleted') {
+    await exitEditor('/')
+    return
+  }
+
   if (activeDialog.value === 'delete' && props.noteId !== undefined) {
     const result = confirmDeletion()
     if (!result?.ok) {
@@ -302,6 +364,119 @@ const confirmDialog = async (): Promise<void> => {
     ? pendingNavigation.value ?? '/'
     : '/'
   await exitEditor(target)
+}
+
+const latestExternalNote = (): Note | null =>
+  props.noteId === undefined ? null : notesStore.getNote(props.noteId)
+
+const conflictReloadLatest = (): void => {
+  const note = latestExternalNote()
+  if (note && editorStore.resolveConflictReload(note)) {
+    activeDialog.value = null
+  }
+}
+
+const performSaveAsNew = async (): Promise<void> => {
+  editorStore.commitText()
+  const result = notesStore.createNote(editorStore.getInput())
+
+  if (!result.ok) {
+    isSaving.value = false
+    activeDialog.value = null
+    await handleSaveValidationFailure(result.reason)
+    return
+  }
+
+  if (!editorStore.finishSession()) {
+    activeDialog.value = null
+    return
+  }
+
+  announce('Заметка создана.')
+  allowNavigation = true
+  activeDialog.value = null
+  await navigateTo('/')
+}
+
+const conflictSaveAsNew = async (): Promise<void> => {
+  await performSaveAsNew()
+}
+
+const conflictOverwrite = (): void => {
+  const note = latestExternalNote()
+  if (!note || props.noteId === undefined) {
+    return
+  }
+
+  const result = notesStore.updateNote(props.noteId, editorStore.getInput(), { force: true })
+  if (!result.ok) {
+    if (result.reason === 'not-found') {
+      activeDialog.value = null
+      isNotFound.value = true
+    }
+    else if (result.reason === 'persistence') {
+      activeDialog.value = null
+      formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.'
+    }
+    else if (result.reason === 'unchanged') {
+      // Local content already equals the external revision: nothing to overwrite.
+      if (!editorStore.finishSession()) {
+        activeDialog.value = null
+        return
+      }
+      announce('Изменения сохранены.')
+      allowNavigation = true
+      activeDialog.value = null
+      void navigateTo('/')
+    }
+    return
+  }
+
+  if (!editorStore.finishSession()) {
+    activeDialog.value = null
+    return
+  }
+
+  announce('Изменения сохранены.')
+  allowNavigation = true
+  activeDialog.value = null
+  void navigateTo('/')
+}
+
+const deletedSaveAsNew = async (): Promise<void> => {
+  await performSaveAsNew()
+}
+
+const deletedExitWithoutSaving = async (): Promise<void> => {
+  await exitEditor('/')
+}
+
+const handleStorageChange = (event: StorageEvent): void => {
+  // A null key means storage.clear() wiped everything in another tab.
+  if (event.key !== NOTES_STORAGE_KEY && event.key !== null) {
+    return
+  }
+
+  if (!notesStore.refresh()) {
+    return
+  }
+
+  if (props.noteId === undefined || !isReady.value) {
+    return
+  }
+
+  const externalNote = notesStore.getNote(props.noteId)
+  const outcome = editorStore.applyExternalChange(externalNote)
+
+  if (outcome === 'deleted') {
+    if (editorStore.isDirty) {
+      activeDialog.value = 'deleted'
+    }
+    else {
+      isNotFound.value = true
+      editorStore.closeSession()
+    }
+  }
 }
 
 const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
@@ -401,12 +576,14 @@ onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   window.addEventListener('pagehide', handlePageHide)
   window.addEventListener('keydown', handleHistoryShortcut)
+  window.addEventListener('storage', handleStorageChange)
 })
 onBeforeUnmount(() => {
   disposed = true
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('pagehide', handlePageHide)
   window.removeEventListener('keydown', handleHistoryShortcut)
+  window.removeEventListener('storage', handleStorageChange)
   if (historyMessageTimeout !== null) {
     clearTimeout(historyMessageTimeout)
   }
@@ -442,6 +619,16 @@ onBeforeUnmount(() => {
         <h1>{{ isEditing ? 'Измените заметку' : 'Что важно запомнить?' }}</h1>
         <p>Добавьте название и пункты. Изменения попадут в список только после сохранения.</p>
       </header>
+
+      <p v-if="editorStore.isExternallyModified && editorStore.isDirty" class="note-editor-page__external">
+        Заметка была изменена в другой вкладке. Ваши изменения не потеряны: при сохранении
+        выберите, как поступить с конфликтом.
+      </p>
+
+      <p v-if="editorStore.isExternallyDeleted && editorStore.session" class="note-editor-page__external note-editor-page__external--danger">
+        Заметка была удалена в другой вкладке. Ваша работа осталась в этом редакторе:
+        сохраните её как новую заметку или выйдите без сохранения.
+      </p>
 
       <form class="note-form" novalidate @submit.prevent="saveNote">
         <div class="field">
@@ -570,9 +757,33 @@ onBeforeUnmount(() => {
       :confirm-label="dialogConfirmLabel"
       :cancel-label="dialogCancelLabel"
       :destructive="activeDialog === 'delete'"
+      :custom-actions="activeDialog === 'conflict' || activeDialog === 'deleted'"
       @cancel="closeDialog"
       @confirm="confirmDialog"
-    />
+    >
+      <template v-if="activeDialog === 'conflict'" #actions>
+        <button class="button button--secondary" type="button" @click="closeDialog">
+          Продолжить редактирование
+        </button>
+        <button class="button button--secondary" type="button" @click="conflictReloadLatest">
+          Загрузить актуальную версию
+        </button>
+        <button class="button button--secondary" type="button" @click="conflictSaveAsNew">
+          Сохранить как новую заметку
+        </button>
+        <button class="button button--danger" type="button" @click="conflictOverwrite">
+          Перезаписать изменения другой вкладки
+        </button>
+      </template>
+      <template v-else-if="activeDialog === 'deleted'" #actions>
+        <button class="button button--secondary" type="button" @click="deletedSaveAsNew">
+          Сохранить как новую заметку
+        </button>
+        <button class="button button--danger" type="button" @click="deletedExitWithoutSaving">
+          Выйти без сохранения
+        </button>
+      </template>
+    </ConfirmDialog>
   </section>
 </template>
 
@@ -603,6 +814,22 @@ onBeforeUnmount(() => {
     @include rem(margin, 0px, 0px, 10px);
     color: var(--color-accent-strong);
     font-weight: 800;
+  }
+
+  &__external {
+    @include rem(margin, 0px);
+    @include rem(padding, 14px, 16px);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    color: var(--color-text);
+    background: var(--color-surface-muted);
+    font-weight: 650;
+    line-height: 1.5;
+
+    &--danger {
+      border-color: var(--color-danger);
+      color: var(--color-danger);
+    }
   }
 
   &__state {

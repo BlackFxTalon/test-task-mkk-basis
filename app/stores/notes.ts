@@ -16,9 +16,14 @@ export type CreateNoteResult =
 export type UpdateNoteResult =
   | { ok: true, note: Note }
   | {
-    ok: false
-    reason: 'not-found' | 'unchanged' | NoteValidationFailure | 'persistence'
-  }
+      ok: false
+      reason: 'not-found' | 'unchanged' | 'revision-conflict' | NoteValidationFailure | 'persistence'
+    }
+
+export interface UpdateNoteOptions {
+  baselineRevision?: number
+  force?: boolean
+}
 
 export type DeleteNoteResult =
   | { ok: true, note: Note }
@@ -55,6 +60,17 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       }
       finally {
         isInitialized.value = true
+      }
+    }
+
+    const refresh = (): boolean => {
+      try {
+        notes.value = sortByUpdatedAt(dependencies.repository.read())
+        error.value = null
+        return true
+      }
+      catch {
+        return false
       }
     }
 
@@ -106,7 +122,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       return { ok: true, note }
     }
 
-    const updateNote = (id: string, input: NoteInput): UpdateNoteResult => {
+    const updateNote = (id: string, input: NoteInput, options: UpdateNoteOptions = {}): UpdateNoteResult => {
       const existingNote = notes.value.find(note => note.id === id)
       if (!existingNote) {
         return { ok: false, reason: 'not-found' }
@@ -115,6 +131,14 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       const normalized = normalizeNoteInput(input)
       if (!normalized.ok) {
         return normalized
+      }
+
+      if (
+        !options.force
+        && options.baselineRevision !== undefined
+        && options.baselineRevision !== existingNote.revision
+      ) {
+        return { ok: false, reason: 'revision-conflict' }
       }
 
       if (areNoteInputsEqual(normalized, existingNote)) {
@@ -161,6 +185,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       isInitialized,
       error,
       initialize,
+      refresh,
       getNote,
       hasNoteChanged,
       createNote,

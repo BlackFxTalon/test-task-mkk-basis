@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import type { Draft, DraftRepository } from '../domain/draft'
+import type { Note, NotesRepository } from '../domain/note'
 import { createNoteEditorStore, useNoteEditorStore } from './noteEditor'
+import { createNotesStore, type NotesStoreDependencies } from './notes'
 
 const createMemoryDraftRepository = (initial: Draft[] = []) => {
   const drafts = new Map(initial.map(draft => [draft.sessionId, structuredClone(draft)]))
@@ -382,5 +384,351 @@ describe('note editor store', () => {
 
     expect(drafts.has('session-1')).toBe(false)
     expect(store.session).toBeNull()
+  })
+})
+
+describe('cross-tab synchronization between the notes and editor stores', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  const savedNote = (): Note => ({
+    id: 'note-1',
+    title: 'Сохранённый список',
+    items: [{ id: 'item-1', text: 'Пункт', completed: false }],
+    createdAt: '2026-09-01T10:00:00.000Z',
+    updatedAt: '2026-09-01T10:00:00.000Z',
+    revision: 1,
+  })
+
+  const externallySavedRevision = (): Note => ({
+    id: 'note-1',
+    title: 'Сохранено в другой вкладке',
+    items: [{ id: 'item-1', text: 'Обновлённый пункт', completed: true }],
+    createdAt: '2026-09-01T10:00:00.000Z',
+    updatedAt: '2026-09-05T10:00:00.000Z',
+    revision: 2,
+  })
+
+  const setup = (initialNotes: Note[]) => {
+    let storedNotes = structuredClone(initialNotes)
+    const notesRepository: NotesRepository = {
+      read: () => structuredClone(storedNotes),
+      write: notes => { storedNotes = structuredClone(notes) },
+    }
+    const notesDependencies: NotesStoreDependencies = {
+      repository: notesRepository,
+      createId: () => 'note-2',
+      now: () => '2026-09-05T14:00:00.000Z',
+    }
+    const { repository: draftRepository } = createMemoryDraftRepository()
+    const useNotesStore = createNotesStore(notesDependencies)
+    const useEditorStore = createNoteEditorStore({
+      repository: draftRepository,
+      createSessionId: () => 'session-1',
+      now: () => '2026-09-05T14:00:00.000Z',
+    })
+    return {
+      useNotesStore,
+      useEditorStore,
+      saveExternally: (note: Note) => { storedNotes = structuredClone(storedNotes).map(candidate => candidate.id === note.id ? structuredClone(note) : candidate) },
+    }
+  }
+
+  it('updates a clean editor to the externally saved revision without a conflict', () => {
+    const { useNotesStore, useEditorStore, saveExternally } = setup([savedNote()])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: note.revision,
+      title: note.title,
+      items: note.items,
+    })
+
+    // Another tab saves a new revision and this tab observes it through storage.
+    saveExternally(externallySavedRevision())
+    notesStore.refresh()
+    const external = notesStore.getNote('note-1')!
+    const outcome = editorStore.applyExternalChange(external)
+
+    expect(outcome).toBe('rebased')
+    expect(editorStore.isExternallyModified).toBe(false)
+    expect(editorStore.isDirty).toBe(false)
+    expect(editorStore.getInput()).toEqual({
+      title: external.title,
+      items: external.items,
+    })
+    expect(editorStore.session?.baselineRevision).toBe(external.revision)
+  })
+
+  it('preserves dirty local work and reports the external modification', () => {
+    const { useNotesStore, useEditorStore, saveExternally } = setup([savedNote()])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: note.revision,
+      title: note.title,
+      items: note.items,
+    })
+    editorStore.setTitle('Локальная работа')
+
+    // Another tab saves a new revision and this tab observes it through storage.
+    saveExternally(externallySavedRevision())
+    notesStore.refresh()
+    const outcome = editorStore.applyExternalChange(notesStore.getNote('note-1'))
+
+    expect(outcome).toBe('notified')
+    expect(editorStore.isExternallyModified).toBe(true)
+    expect(editorStore.getInput().title).toBe('Локальная работа')
+    expect(editorStore.isDirty).toBe(true)
+
+    const saveResult = notesStore.updateNote('note-1', editorStore.getInput(), {
+      baselineRevision: editorStore.session?.baselineRevision ?? undefined,
+    })
+    expect(saveResult).toEqual({ ok: false, reason: 'revision-conflict' })
+  })
+
+  it('rejects a save from a stale baseline revision', () => {
+    const { useNotesStore, useEditorStore } = setup([externallySavedRevision()])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: 1,
+      title: note.title,
+      items: note.items,
+    })
+    editorStore.setTitle('Из другой вкладки')
+
+    const result = notesStore.updateNote('note-1', editorStore.getInput(), {
+      baselineRevision: editorStore.session?.baselineRevision ?? undefined,
+    })
+
+    expect(result).toEqual({ ok: false, reason: 'revision-conflict' })
+    expect(notesStore.getNote('note-1')?.revision).toBe(2)
+  })
+
+  it('creates a newer revision when overwrite is chosen deliberately', () => {
+    const { useNotesStore, useEditorStore } = setup([externallySavedRevision()])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: 1,
+      title: note.title,
+      items: note.items,
+    })
+    editorStore.setTitle('Намеренная перезапись')
+
+    const result = notesStore.updateNote('note-1', editorStore.getInput(), { force: true })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.note.revision).toBeGreaterThan(2)
+      expect(result.note.title).toBe('Намеренная перезапись')
+    }
+    expect(notesStore.getNote('note-1')?.revision).toBe(3)
+  })
+
+  it('turns a dirty editor into an independent new note on save-as-new', () => {
+    const { useNotesStore, useEditorStore } = setup([savedNote()])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: note.revision,
+      title: note.title,
+      items: note.items,
+    })
+    editorStore.setTitle('Спасённая работа')
+
+    // Save-as-new resolves the conflict by creating a brand-new note
+    // from the preserved local work, leaving the original untouched.
+    const created = notesStore.createNote(editorStore.getInput())
+    expect(created.ok).toBe(true)
+    if (created.ok) {
+      expect(created.note.revision).toBe(1)
+      expect(created.note.title).toBe('Спасённая работа')
+    }
+    expect(notesStore.getNote('note-1')?.title).toBe('Сохранённый список')
+    expect(editorStore.finishSession()).toBe(true)
+    expect(editorStore.session).toBeNull()
+  })
+
+  it('moves a clean editor to the externally deleted state', () => {
+    const { useNotesStore, useEditorStore } = setup([savedNote()])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: note.revision,
+      title: note.title,
+      items: note.items,
+    })
+
+    const outcome = editorStore.applyExternalChange(null)
+
+    expect(outcome).toBe('deleted')
+    expect(editorStore.isExternallyDeleted).toBe(true)
+  })
+
+  it('offers local work rescue when a dirty note is externally deleted', () => {
+    const { useNotesStore, useEditorStore } = setup([savedNote()])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: note.revision,
+      title: note.title,
+      items: note.items,
+    })
+    editorStore.setTitle('Уцелевшая работа')
+
+    const outcome = editorStore.applyExternalChange(null)
+
+    expect(outcome).toBe('deleted')
+    expect(editorStore.isExternallyDeleted).toBe(true)
+    expect(editorStore.isExternallyModified).toBe(false)
+    expect(editorStore.getInput().title).toBe('Уцелевшая работа')
+    expect(editorStore.isDirty).toBe(true)
+
+    // The rescue path creates a brand-new note from the preserved local work.
+    const created = notesStore.createNote(editorStore.getInput())
+    expect(created.ok).toBe(true)
+    if (created.ok) {
+      expect(created.note.title).toBe('Уцелевшая работа')
+    }
+    expect(editorStore.finishSession()).toBe(true)
+    expect(editorStore.isExternallyDeleted).toBe(false)
+  })
+
+  it('recovers a matching draft as a new note when opening a deleted note URL', () => {
+    const { drafts, repository } = createMemoryDraftRepository([{
+      sessionId: 'session-1',
+      targetNoteId: 'note-1',
+      baselineRevision: 2,
+      current: {
+        title: 'Черновик удалённой заметки',
+        items: [{ id: 'draft-item', text: 'Уцелевший пункт', completed: false }],
+      },
+      updatedAt: '2026-09-04T14:00:00.000Z',
+    }])
+    const useStore = createNoteEditorStore({
+      repository,
+      createSessionId: () => 'unused',
+      now: () => '2026-09-05T14:00:00.000Z',
+    })
+    const store = useStore()
+
+    const offered = store.offerDraftForDeletedNote('note-1', 'session-1')
+
+    expect(offered?.current.title).toBe('Черновик удалённой заметки')
+    expect(store.recoveryDraft?.current.title).toBe('Черновик удалённой заметки')
+
+    expect(store.restoreOrphanedDraftAsNew()).toBe(true)
+
+    expect(store.session?.noteId).toBeNull()
+    expect(store.session?.sessionId).toBe('session-1')
+    expect(store.getInput()).toEqual({
+      title: 'Черновик удалённой заметки',
+      items: [{ id: 'draft-item', text: 'Уцелевший пункт', completed: false }],
+    })
+    expect(store.isDirty).toBe(true)
+    expect(store.canUndo).toBe(false)
+    expect(store.recoveryDraft).toBeNull()
+    expect(drafts.has('session-1')).toBe(true)
+  })
+
+  it('does not offer an unrecoverable draft for a deleted note', () => {
+    const { repository } = createMemoryDraftRepository([{
+      sessionId: 'session-1',
+      targetNoteId: 'note-1',
+      baselineRevision: 2,
+      current: { title: '   ', items: [] },
+      updatedAt: '2026-09-04T14:00:00.000Z',
+    }])
+    const useStore = createNoteEditorStore({
+      repository,
+      createSessionId: () => 'unused',
+      now: () => '2026-09-05T14:00:00.000Z',
+    })
+    const store = useStore()
+
+    expect(store.offerDraftForDeletedNote('note-1', 'session-1')).toBeNull()
+    expect(store.recoveryDraft).toBeNull()
+  })
+
+  it('ignores external events for an unrelated note', () => {
+    const otherNote: Note = {
+      id: 'other-note',
+      title: 'Другая заметка',
+      items: [],
+      createdAt: '2026-09-01T10:00:00.000Z',
+      updatedAt: '2026-09-01T10:00:00.000Z',
+      revision: 5,
+    }
+    const { useNotesStore, useEditorStore } = setup([savedNote(), otherNote])
+    const notesStore = useNotesStore()
+    const editorStore = useEditorStore()
+    notesStore.initialize()
+    const note = notesStore.getNote('note-1')!
+    editorStore.startSession({
+      noteId: note.id,
+      baselineRevision: note.revision,
+      title: note.title,
+      items: note.items,
+    })
+
+    expect(editorStore.applyExternalChange(otherNote)).toBe('ignored')
+    expect(editorStore.isExternallyModified).toBe(false)
+
+    expect(editorStore.applyExternalChange(savedNote())).toBe('ignored')
+  })
+
+  it('refreshes the home list from storage on external writes', () => {
+    let externalNotes = [savedNote()]
+    const notesRepository: NotesRepository = {
+      read: () => structuredClone(externalNotes),
+      write: () => {},
+    }
+    const useNotesStore = createNotesStore({
+      repository: notesRepository,
+      createId: () => 'note-2',
+      now: () => '2026-09-05T14:00:00.000Z',
+    })
+    const notesStore = useNotesStore()
+    notesStore.initialize()
+    expect(notesStore.notes.map(candidate => candidate.title)).toEqual(['Сохранённый список'])
+
+    externalNotes = [...externalNotes, {
+      id: 'external',
+      title: 'Из другой вкладки',
+      items: [],
+      createdAt: '2026-09-05T10:00:00.000Z',
+      updatedAt: '2026-09-05T10:00:00.000Z',
+      revision: 1,
+    }]
+
+    expect(notesStore.refresh()).toBe(true)
+    expect(notesStore.notes.map(candidate => candidate.title)).toEqual([
+      'Из другой вкладки',
+      'Сохранённый список',
+    ])
   })
 })

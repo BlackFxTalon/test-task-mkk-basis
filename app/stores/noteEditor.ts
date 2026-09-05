@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Draft, DraftRepository } from '../domain/draft'
-import type { TodoItem } from '../domain/note'
+import type { Note, TodoItem } from '../domain/note'
 import {
   createNoteHistory,
   type HistoryResult,
@@ -10,12 +10,18 @@ import {
 import {
   areNoteInputsEqual,
   cloneNoteInput,
+  normalizeNoteInputForComparison,
   type NoteInput,
 } from '../domain/noteInput'
 import { browserDraftRepository } from '../repositories/browserDraftRepository'
 
 const DRAFT_WRITE_DELAY_MS = 700
 const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+const isDraftRecoverable = (input: NoteInput): boolean => {
+  const normalized = normalizeNoteInputForComparison(input)
+  return normalized.title.length > 0 || normalized.items.length > 0
+}
 
 export interface EditingSession extends NoteInput {
   sessionId: string
@@ -41,10 +47,13 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
     const session = ref<EditingSession | null>(null)
     const recoveryDraft = ref<Draft | null>(null)
     const draftError = ref<string | null>(null)
+    const isExternallyDeleted = ref(false)
+    const isExternallyModified = ref(false)
     const canUndo = ref(false)
     const canRedo = ref(false)
     let history: NoteHistory | null = null
     let draftTimer: ReturnType<typeof setTimeout> | null = null
+    let pendingDeletionSessionId: string | null = null
 
     const isDirty = computed(() => {
       if (!session.value) {
@@ -73,7 +82,7 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
     }
 
     const deleteCurrentDraft = (): boolean => {
-      const sessionId = session.value?.sessionId
+      const sessionId = session.value?.sessionId ?? pendingDeletionSessionId
       if (!sessionId) {
         return true
       }
@@ -124,9 +133,7 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
       draftTimer = setTimeout(persistDraft, DRAFT_WRITE_DELAY_MS)
     }
 
-    const loadRecoveryDraft = (sessionId: string, noteId: string | null): void => {
-      recoveryDraft.value = null
-
+    const pruneExpiredDrafts = (): void => {
       const now = Date.parse(dependencies.now())
       const cutoff = new Date(now - DRAFT_MAX_AGE_MS).toISOString()
       try {
@@ -135,6 +142,11 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
       catch {
         draftError.value = 'Не удалось очистить старые черновики.'
       }
+    }
+
+    const loadRecoveryDraft = (sessionId: string, noteId: string | null): void => {
+      recoveryDraft.value = null
+      pruneExpiredDrafts()
 
       try {
         const draft = dependencies.repository.read(sessionId)
@@ -150,6 +162,9 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
     const startSession = (input: StartEditingSessionInput): string => {
       clearDraftTimer()
       history?.destroy()
+      isExternallyDeleted.value = false
+      isExternallyModified.value = false
+      pendingDeletionSessionId = null
       const sessionId = input.sessionId ?? dependencies.createSessionId()
       const baseline = cloneNoteInput(input)
       session.value = {
@@ -241,6 +256,7 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
       const deleted = deleteCurrentDraft()
       if (deleted) {
         recoveryDraft.value = null
+        pendingDeletionSessionId = null
       }
       return deleted
     }
@@ -251,6 +267,9 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
       history = null
       session.value = null
       recoveryDraft.value = null
+      isExternallyDeleted.value = false
+      isExternallyModified.value = false
+      pendingDeletionSessionId = null
       canUndo.value = false
       canRedo.value = false
     }
@@ -267,10 +286,121 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
 
     const cancelSession = finishSession
 
+    const rebaseTo = (
+      targetSession: NonNullable<typeof session.value>,
+      externalNote: Note,
+    ): void => {
+      clearDraftTimer()
+      history?.destroy()
+      const nextInput: NoteInput = {
+        title: externalNote.title,
+        items: externalNote.items.map(item => ({ ...item })),
+      }
+      history = createNoteHistory(targetSession, { onChange: syncHistoryAvailability })
+      targetSession.title = nextInput.title
+      targetSession.items = nextInput.items
+      targetSession.baselineRevision = externalNote.revision
+      targetSession.baseline = cloneNoteInput(nextInput)
+      syncHistoryAvailability()
+    }
+
+    const applyExternalChange = (externalNote: Note | null): 'rebased' | 'notified' | 'deleted' | 'ignored' => {
+      const currentSession = session.value
+      if (!currentSession) {
+        return 'ignored'
+      }
+
+      if (!externalNote) {
+        if (currentSession.noteId === null) {
+          return 'ignored'
+        }
+
+        isExternallyDeleted.value = true
+        isExternallyModified.value = false
+        return 'deleted'
+      }
+
+      if (currentSession.noteId !== externalNote.id) {
+        return 'ignored'
+      }
+
+      if (currentSession.baselineRevision === externalNote.revision) {
+        return 'ignored'
+      }
+
+      if (isDirty.value) {
+        isExternallyModified.value = true
+        return 'notified'
+      }
+
+      rebaseTo(currentSession, externalNote)
+      isExternallyModified.value = false
+      return 'rebased'
+    }
+
+    const resolveConflictReload = (externalNote: Note): boolean => {
+      const currentSession = session.value
+      if (!currentSession || currentSession.noteId !== externalNote.id) {
+        return false
+      }
+
+      rebaseTo(currentSession, externalNote)
+      isExternallyModified.value = false
+      return true
+    }
+
+    const offerDraftForDeletedNote = (noteId: string, sessionId: string | null): Draft | null => {
+      if (session.value || recoveryDraft.value || !sessionId) {
+        return null
+      }
+
+      pruneExpiredDrafts()
+
+      try {
+        const draft = dependencies.repository.read(sessionId)
+        if (draft && draft.targetNoteId === noteId && isDraftRecoverable(draft.current)) {
+          recoveryDraft.value = draft
+          pendingDeletionSessionId = draft.sessionId
+          return draft
+        }
+      }
+      catch {
+        draftError.value = 'Не удалось загрузить черновик.'
+      }
+      return null
+    }
+
+    const restoreOrphanedDraftAsNew = (): boolean => {
+      const draft = recoveryDraft.value
+      if (!draft || session.value) {
+        return false
+      }
+
+      const restoredInput = cloneNoteInput(draft.current)
+      clearDraftTimer()
+      history?.destroy()
+      session.value = {
+        sessionId: draft.sessionId,
+        noteId: null,
+        baselineRevision: null,
+        ...cloneNoteInput(restoredInput),
+        baseline: { title: '', items: [] },
+      }
+      history = createNoteHistory(session.value, { onChange: syncHistoryAvailability })
+      syncHistoryAvailability()
+      recoveryDraft.value = null
+      pendingDeletionSessionId = null
+      isExternallyDeleted.value = false
+      isExternallyModified.value = false
+      return true
+    }
+
     return {
       session,
       recoveryDraft,
       draftError,
+      isExternallyDeleted,
+      isExternallyModified,
       isDirty,
       canUndo,
       canRedo,
@@ -287,6 +417,10 @@ export const createNoteEditorStore = (dependencies: NoteEditorStoreDependencies)
       persistDraft,
       restoreRecoveryDraft,
       discardRecoveryDraft,
+      applyExternalChange,
+      resolveConflictReload,
+      offerDraftForDeletedNote,
+      restoreOrphanedDraftAsNew,
       closeSession,
       finishSession,
       cancelSession,

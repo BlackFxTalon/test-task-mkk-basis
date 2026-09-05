@@ -6,9 +6,11 @@ const props = withDefaults(defineProps<{
   confirmLabel: string
   cancelLabel?: string
   destructive?: boolean
+  customActions?: boolean
 }>(), {
   cancelLabel: 'Отмена',
   destructive: false,
+  customActions: false,
 })
 
 const emit = defineEmits<{
@@ -22,6 +24,11 @@ let triggerElement: HTMLElement | null = null
 let openedModally = false
 const fallbackInertElements = new Set<HTMLElement>()
 
+const initialFocusTarget = (): HTMLElement | null =>
+  cancelButton.value
+  ?? dialog.value?.querySelector<HTMLElement>('.confirm-dialog__actions button')
+  ?? null
+
 const containFallbackFocus = (event: FocusEvent): void => {
   const element = dialog.value
   if (
@@ -30,7 +37,7 @@ const containFallbackFocus = (event: FocusEvent): void => {
     && event.target instanceof Node
     && !element.contains(event.target)
   ) {
-    cancelButton.value?.focus()
+    initialFocusTarget()?.focus()
   }
 }
 
@@ -98,7 +105,7 @@ const openDialog = async (): Promise<void> => {
   }
 
   await nextTick()
-  cancelButton.value?.focus()
+  initialFocusTarget()?.focus()
 }
 
 watch(
@@ -169,17 +176,22 @@ onBeforeUnmount(closeDialog)
         <h2>{{ title }}</h2>
         <p>{{ description }}</p>
         <div class="confirm-dialog__actions">
-          <button ref="cancelButton" class="button button--secondary" type="button" autofocus @click="requestCancel">
-            {{ cancelLabel }}
-          </button>
-          <button
-            class="button"
-            :class="destructive ? 'button--danger' : 'button--primary'"
-            type="button"
-            @click="emit('confirm')"
-          >
-            {{ confirmLabel }}
-          </button>
+          <template v-if="customActions">
+            <slot name="actions" />
+          </template>
+          <template v-else>
+            <button ref="cancelButton" class="button button--secondary" type="button" autofocus @click="requestCancel">
+              {{ cancelLabel }}
+            </button>
+            <button
+              class="button"
+              :class="destructive ? 'button--danger' : 'button--primary'"
+              type="button"
+              @click="emit('confirm')"
+            >
+              {{ confirmLabel }}
+            </button>
+          </template>
         </div>
       </div>
     </dialog>

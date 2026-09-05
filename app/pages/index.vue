@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+import { NOTES_STORAGE_KEY } from '../repositories/browserNotesRepository'
 import { useNotesStore } from '../stores/notes'
 
 useHead({ title: 'Заметки' })
@@ -15,10 +16,23 @@ const {
   confirmDeletion,
 } = useNoteDeletion()
 
+const handleStorageChange = (event: StorageEvent): void => {
+  // A null key means storage.clear() wiped everything in another tab.
+  if (event.key !== NOTES_STORAGE_KEY && event.key !== null) {
+    return
+  }
+
+  notesStore.refresh()
+}
+
 onMounted(() => {
   notesStore.initialize()
+  window.addEventListener('storage', handleStorageChange)
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', handleStorageChange)
+})
 </script>
 
 <template>
