@@ -2,6 +2,7 @@
 import {
   NOTE_ITEM_MAX_LENGTH,
   NOTE_TITLE_MAX_LENGTH,
+  type TodoItem,
 } from '../domain/note'
 import type { HistoryOperationType, HistoryResult } from '../domain/noteHistory'
 import { useNoteEditorStore } from '../stores/noteEditor'
@@ -13,6 +14,8 @@ const props = defineProps<{
 
 const notesStore = useNotesStore()
 const editorStore = useNoteEditorStore()
+const route = useRoute()
+const { claimRequestedSession, ownSession } = useEditingSessionOwnership()
 const { announce } = useOperationStatus()
 const {
   deletionDescription,
@@ -27,7 +30,7 @@ const isNotFound = ref(false)
 const titleError = ref<string | null>(null)
 const formError = ref<string | null>(null)
 const historyMessage = ref<string | null>(null)
-const activeDialog = ref<'cancel' | 'delete' | 'navigation' | null>(null)
+const activeDialog = ref<'cancel' | 'delete' | 'navigation' | 'recovery' | null>(null)
 const pendingNavigation = ref<string | null>(null)
 let allowNavigation = false
 let historyMessageTimeout: ReturnType<typeof setTimeout> | null = null
@@ -44,20 +47,80 @@ const isSaveDisabled = computed(() =>
   || (isEditing.value && !editorStore.isDirty),
 )
 
-const dialogTitle = computed(() => activeDialog.value === 'delete'
-  ? 'Удалить заметку?'
-  : 'Выйти из редактора?')
-const dialogDescription = computed(() => activeDialog.value === 'delete'
-  ? deletionDescription.value
-  : 'Несохранённые изменения будут потеряны.')
-const dialogConfirmLabel = computed(() => activeDialog.value === 'delete'
-  ? 'Удалить заметку'
-  : 'Выйти без сохранения')
+const DIALOG_TEXT: Record<NonNullable<typeof activeDialog.value>, { title: string, confirmLabel: string, cancelLabel: string, description?: string }> = {
+  cancel: {
+    title: 'Выйти из редактора?',
+    confirmLabel: 'Выйти без сохранения',
+    cancelLabel: 'Отмена',
+  },
+  delete: {
+    title: 'Удалить заметку?',
+    confirmLabel: 'Удалить заметку',
+    cancelLabel: 'Отмена',
+  },
+  navigation: {
+    title: 'Выйти из редактора?',
+    confirmLabel: 'Выйти без сохранения',
+    cancelLabel: 'Отмена',
+  },
+  recovery: {
+    title: 'Восстановить черновик?',
+    description: 'Для этой вкладки найдены несохранённые изменения. Их можно восстановить или удалить.',
+    confirmLabel: 'Восстановить черновик',
+    cancelLabel: 'Удалить черновик',
+  },
+}
 
-onMounted(() => {
+const dialogTitle = computed(() => DIALOG_TEXT[activeDialog.value ?? 'cancel'].title)
+const dialogDescription = computed(() => {
+  if (activeDialog.value === 'delete') {
+    return deletionDescription.value
+  }
+  return DIALOG_TEXT[activeDialog.value ?? 'cancel'].description ?? 'Несохранённые изменения будут потеряны.'
+})
+const dialogConfirmLabel = computed(() => DIALOG_TEXT[activeDialog.value ?? 'cancel'].confirmLabel)
+const dialogCancelLabel = computed(() => DIALOG_TEXT[activeDialog.value ?? 'cancel'].cancelLabel)
+
+const sessionIdFromRoute = (): string | undefined => {
+  const value = route.query.session
+  const sessionId = Array.isArray(value) ? value[0] : value
+  return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : undefined
+}
+
+let disposed = false
+
+const startOwnedSession = async (
+  input: {
+    noteId: string | null
+    baselineRevision?: number
+    title: string
+    items: TodoItem[]
+  },
+  requestedSessionId: string | undefined,
+): Promise<string | null> => {
+  const claimedSessionId = await claimRequestedSession(requestedSessionId)
+  if (disposed) {
+    return null
+  }
+
+  const sessionId = editorStore.startSession({
+    sessionId: claimedSessionId,
+    noteId: input.noteId,
+    baselineRevision: input.baselineRevision,
+    title: input.title,
+    items: input.items,
+  })
+  ownSession(sessionId)
+  return sessionId
+}
+
+const initializeEditor = async (): Promise<void> => {
   if (!notesStore.isInitialized) {
     notesStore.initialize()
   }
+
+  const requestedSessionId = sessionIdFromRoute()
+  let sessionId: string | null = null
 
   if (props.noteId !== undefined && !notesStore.error) {
     const note = notesStore.getNote(props.noteId)
@@ -65,18 +128,37 @@ onMounted(() => {
       isNotFound.value = true
     }
     else {
-      editorStore.startSession({
+      sessionId = await startOwnedSession({
         noteId: note.id,
+        baselineRevision: note.revision,
         title: note.title,
         items: note.items,
-      })
+      }, requestedSessionId)
     }
   }
   else if (props.noteId === undefined && !notesStore.error) {
-    editorStore.startSession({ noteId: null, title: '', items: [] })
+    sessionId = await startOwnedSession({
+      noteId: null,
+      title: '',
+      items: [],
+    }, requestedSessionId)
   }
 
+  if (sessionId && sessionId !== requestedSessionId) {
+    await navigateTo({
+      path: route.path,
+      query: { ...route.query, session: sessionId },
+    }, { replace: true })
+  }
+
+  if (editorStore.recoveryDraft) {
+    activeDialog.value = 'recovery'
+  }
   isReady.value = true
+}
+
+onMounted(() => {
+  void initializeEditor()
 })
 
 const addItem = (): void => {
@@ -121,7 +203,7 @@ const saveNote = async (): Promise<void> => {
     ? notesStore.createNote(editorStore.getInput())
     : notesStore.updateNote(props.noteId, editorStore.getInput())
 
-  if (!result.ok) {
+  if (!result.ok && result.reason !== 'unchanged') {
     isSaving.value = false
 
     if (result.reason === 'title-required') {
@@ -138,12 +220,21 @@ const saveNote = async (): Promise<void> => {
     else if (result.reason === 'not-found') {
       isNotFound.value = true
     }
+    else if (result.reason === 'persistence') {
+      formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.'
+    }
 
     return
   }
 
-  announce(isEditing.value ? 'Изменения сохранены.' : 'Заметка создана.')
-  editorStore.cancelSession()
+  if (!editorStore.finishSession()) {
+    isSaving.value = false
+    return
+  }
+
+  if (result.ok) {
+    announce(isEditing.value ? 'Изменения сохранены.' : 'Заметка создана.')
+  }
   allowNavigation = true
   await navigateTo('/')
 }
@@ -169,12 +260,17 @@ const closeDialog = (): void => {
   if (activeDialog.value === 'delete') {
     cancelDeletion()
   }
+  else if (activeDialog.value === 'recovery' && !editorStore.discardRecoveryDraft()) {
+    return
+  }
   activeDialog.value = null
   pendingNavigation.value = null
 }
 
 const exitEditor = async (target: string): Promise<void> => {
-  editorStore.cancelSession()
+  if (!editorStore.cancelSession()) {
+    return
+  }
   allowNavigation = true
   activeDialog.value = null
   pendingNavigation.value = null
@@ -182,6 +278,12 @@ const exitEditor = async (target: string): Promise<void> => {
 }
 
 const confirmDialog = async (): Promise<void> => {
+  if (activeDialog.value === 'recovery') {
+    editorStore.restoreRecoveryDraft()
+    activeDialog.value = null
+    return
+  }
+
   if (activeDialog.value === 'delete' && props.noteId !== undefined) {
     const result = confirmDeletion()
     if (!result?.ok) {
@@ -291,17 +393,24 @@ onBeforeRouteLeave((to) => {
   return false
 })
 
+const handlePageHide = (): void => {
+  editorStore.persistDraft()
+}
+
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('pagehide', handlePageHide)
   window.addEventListener('keydown', handleHistoryShortcut)
 })
 onBeforeUnmount(() => {
+  disposed = true
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('pagehide', handlePageHide)
   window.removeEventListener('keydown', handleHistoryShortcut)
   if (historyMessageTimeout !== null) {
     clearTimeout(historyMessageTimeout)
   }
-  editorStore.cancelSession()
+  editorStore.closeSession()
 })
 </script>
 
@@ -406,6 +515,7 @@ onBeforeUnmount(() => {
 
         <p v-if="formError" class="note-form__error">{{ formError }}</p>
         <p v-if="notesStore.error" class="note-form__error">{{ notesStore.error }}</p>
+        <p v-if="editorStore.draftError" class="note-form__error">{{ editorStore.draftError }}</p>
 
         <div class="history-controls">
           <button
@@ -458,6 +568,7 @@ onBeforeUnmount(() => {
       :title="dialogTitle"
       :description="dialogDescription"
       :confirm-label="dialogConfirmLabel"
+      :cancel-label="dialogCancelLabel"
       :destructive="activeDialog === 'delete'"
       @cancel="closeDialog"
       @confirm="confirmDialog"

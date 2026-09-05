@@ -4,8 +4,10 @@ const props = withDefaults(defineProps<{
   title: string
   description: string
   confirmLabel: string
+  cancelLabel?: string
   destructive?: boolean
 }>(), {
+  cancelLabel: 'Отмена',
   destructive: false,
 })
 
@@ -168,7 +170,7 @@ onBeforeUnmount(closeDialog)
         <p>{{ description }}</p>
         <div class="confirm-dialog__actions">
           <button ref="cancelButton" class="button button--secondary" type="button" autofocus @click="requestCancel">
-            Отмена
+            {{ cancelLabel }}
           </button>
           <button
             class="button"
