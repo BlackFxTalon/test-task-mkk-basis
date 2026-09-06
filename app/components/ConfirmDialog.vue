@@ -281,7 +281,7 @@ onBeforeUnmount(closeInstant);
   }
 
   &::backdrop {
-    background: rgb(2 18 24 / 64%);
+    background-color: rgb(2 18 24 / 64%);
     backdrop-filter: blur(3px);
     transition: opacity 160ms ease;
   }
