@@ -1,0 +1,18 @@
+node_modules
+.nuxt
+.output
+.data
+.git
+.gitignore
+.env
+.env.*
+*.log
+.DS_Store
+
+# Local planning and agent context, not needed inside the image
+.scratch
+docs
+files
+AGENTS.md
+CONTEXT.md
+IDEA.md
