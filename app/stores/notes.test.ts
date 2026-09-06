@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createNotesStore, type NotesStoreDependencies } from './notes'
 import { NOTE_ITEM_MAX_LENGTH, NOTE_TITLE_MAX_LENGTH, type Note, type NotesRepository } from '../domain/note'
+import { NotesStorageError } from '../domain/notesStorage'
+import { createBrowserNotesRepository, NOTES_STORAGE_KEY, type NotesStoragePort } from '../repositories/browserNotesRepository'
 
 class InMemoryNotesRepository implements NotesRepository {
   writeCalls = 0
@@ -20,6 +22,10 @@ class InMemoryNotesRepository implements NotesRepository {
     }
     this.storedNotes = structuredClone(notes)
   }
+
+  reset(): void {
+    this.storedNotes = []
+  }
 }
 
 const createDependencies = (
@@ -31,6 +37,30 @@ const createDependencies = (
   now: () => '2026-09-03T12:00:00.000Z',
   ...overrides,
 })
+
+class InMemoryStoragePort implements NotesStoragePort {
+  private items: Map<string, string>
+
+  constructor(initial: Record<string, string> = {}) {
+    this.items = new Map(Object.entries(initial))
+  }
+
+  getItem(key: string): string | null {
+    return this.items.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.items.set(key, value)
+  }
+
+  removeItem(key: string): void {
+    this.items.delete(key)
+  }
+
+  readItem(key: string): string | null {
+    return this.getItem(key)
+  }
+}
 
 describe('notes store', () => {
   beforeEach(() => {
@@ -432,5 +462,235 @@ describe('notes store', () => {
     expect(store.notes).toEqual([existing])
     expect(repository.storedNotes).toEqual([existing])
     expect(store.error).toBe('Не удалось удалить заметку. Попробуйте ещё раз.')
+  })
+
+  it('migrates a supported older schema version to the current one, preserving user notes', () => {
+    const port = new InMemoryStoragePort({
+      [NOTES_STORAGE_KEY]: JSON.stringify({
+        schemaVersion: 1,
+        notes: [{
+          id: 'legacy',
+          title: 'Старая заметка',
+          items: [{ id: 'item', text: 'Пункт', completed: true }],
+          createdAt: '2026-08-01T10:00:00.000Z',
+          updatedAt: '2026-08-01T10:00:00.000Z',
+        }],
+      }),
+    })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+
+    store.initialize()
+
+    expect(store.error).toBeNull()
+    expect(store.notes.map(note => note.id)).toEqual(['legacy'])
+    expect(store.notes[0]).toMatchObject({
+      id: 'legacy',
+      title: 'Старая заметка',
+      items: [{ id: 'item', text: 'Пункт', completed: true }],
+    })
+    expect(JSON.parse(port.readItem(NOTES_STORAGE_KEY)!)).toMatchObject({ schemaVersion: 2 })
+  })
+
+  it('migrates supported storage versions in sequence with notes carried through every step', () => {
+    const port = new InMemoryStoragePort({
+      [NOTES_STORAGE_KEY]: JSON.stringify({
+        schemaVersion: 1,
+        notes: [{
+          id: 'kept-through-migrations',
+          title: 'Переживает миграции',
+          items: [],
+          createdAt: '2026-08-01T10:00:00.000Z',
+          updatedAt: '2026-08-01T10:00:00.000Z',
+        }],
+      }),
+    })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+
+    store.initialize()
+
+    expect(store.notes.map(note => note.id)).toEqual(['kept-through-migrations'])
+    expect(JSON.parse(port.readItem(NOTES_STORAGE_KEY)!).schemaVersion).toBe(2)
+  })
+
+  it('reports corrupted storage as an explicit blocker instead of an empty list', () => {
+    const port = new InMemoryStoragePort({
+      [NOTES_STORAGE_KEY]: '{"schemaVersion":2,',
+    })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+
+    store.initialize()
+
+    expect(store.notes).toEqual([])
+    expect(store.isInitialized).toBe(true)
+    expect(store.storageBlocker).toEqual({ kind: 'corrupted' })
+    expect(store.error).toBe('Сохранённые данные заметок повреждены.')
+    expect(port.readItem(NOTES_STORAGE_KEY)).toBe('{"schemaVersion":2,')
+  })
+
+  it('reports invalid notes structure as a blocker without naming it corruption of JSON', () => {
+    const port = new InMemoryStoragePort({
+      [NOTES_STORAGE_KEY]: JSON.stringify({ schemaVersion: 2, notes: { id: 'not-an-array' } }),
+    })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+
+    store.initialize()
+
+    expect(store.storageBlocker).toEqual({ kind: 'corrupted' })
+    expect(store.notes).toEqual([])
+  })
+
+  it('reports an unknown future schema version as a blocker and keeps its payload intact', () => {
+    const futurePayload = JSON.stringify({
+      schemaVersion: 99,
+      notes: [{ id: 'from-future', title: 'Будущее', items: [], createdAt: '', updatedAt: '', revision: 7 }],
+    })
+    const port = new InMemoryStoragePort({ [NOTES_STORAGE_KEY]: futurePayload })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+
+    store.initialize()
+
+    expect(store.storageBlocker).toEqual({ kind: 'future-version' })
+    expect(store.notes).toEqual([])
+    expect(port.readItem(NOTES_STORAGE_KEY)).toBe(futurePayload)
+  })
+
+  it('reports a future version even when its stored payload structure is also malformed', () => {
+    const port = new InMemoryStoragePort({
+      [NOTES_STORAGE_KEY]: '{"schemaVersion":99,"notes":"junk"}',
+    })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+
+    store.initialize()
+
+    expect(store.storageBlocker).toEqual({ kind: 'future-version' })
+  })
+
+  it('blocks mutating actions while storage is blocked and leaves the payload untouched', () => {
+    const futurePayload = '{"schemaVersion":99,"notes":"junk"}'
+    const port = new InMemoryStoragePort({ [NOTES_STORAGE_KEY]: futurePayload })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+    store.initialize()
+
+    const createResult = store.createNote({ title: 'Новая', items: [] })
+    const updateResult = store.updateNote('any', { title: 'Изменение', items: [] })
+    const deleteResult = store.deleteNote('any')
+
+    expect(createResult).toEqual({ ok: false, reason: 'persistence' })
+    expect(updateResult).toEqual({ ok: false, reason: 'persistence' })
+    expect(deleteResult).toEqual({ ok: false, reason: 'persistence' })
+    expect(port.readItem(NOTES_STORAGE_KEY)).toBe(futurePayload)
+  })
+
+  it('refresh keeps an existing blocker and does not fall back to an empty list', () => {
+    const futurePayload = JSON.stringify({ schemaVersion: 99, notes: [] })
+    const port = new InMemoryStoragePort({ [NOTES_STORAGE_KEY]: futurePayload })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+    store.initialize()
+
+    const refreshed = store.refresh()
+
+    expect(refreshed).toBe(false)
+    expect(store.storageBlocker).toEqual({ kind: 'future-version' })
+    expect(port.readItem(NOTES_STORAGE_KEY)).toBe(futurePayload)
+  })
+
+  it('resets only the saved-notes key after explicit confirmation and clears the blocker', () => {
+    const futurePayload = JSON.stringify({ schemaVersion: 99, notes: [] })
+    const port = new InMemoryStoragePort({
+      [NOTES_STORAGE_KEY]: futurePayload,
+      'notes-theme': 'dark',
+      'basis-notes:drafts': JSON.stringify({ schemaVersion: 1, drafts: [] }),
+    })
+    const repository = createBrowserNotesRepository(port)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+    store.initialize()
+    expect(store.storageBlocker).toEqual({ kind: 'future-version' })
+
+    const result = store.resetSavedNotes()
+
+    expect(result).toEqual({ ok: true })
+    expect(store.storageBlocker).toBeNull()
+    expect(store.error).toBeNull()
+    expect(store.notes).toEqual([])
+    expect(port.readItem(NOTES_STORAGE_KEY)).toBeNull()
+    expect(port.readItem('notes-theme')).toBe('dark')
+    expect(port.readItem('basis-notes:drafts')).toBe(JSON.stringify({ schemaVersion: 1, drafts: [] }))
+  })
+
+  it('reports a failed reset instead of claiming success', () => {
+    const futurePayload = JSON.stringify({ schemaVersion: 99, notes: [] })
+    const port = new InMemoryStoragePort({ [NOTES_STORAGE_KEY]: futurePayload })
+    const repository = {
+      read: () => {
+        throw new NotesStorageError('future-version')
+      },
+      write: () => {
+        throw new Error('blocked')
+      },
+      reset: () => {
+        throw new Error('quota')
+      },
+    } satisfies NotesRepository
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+    store.initialize()
+
+    const result = store.resetSavedNotes()
+
+    expect(result).toEqual({ ok: false, reason: 'persistence' })
+    expect(store.storageBlocker).toEqual({ kind: 'future-version' })
+    expect(port.readItem(NOTES_STORAGE_KEY)).toBe(futurePayload)
+  })
+
+  it('keeps a quota write failure from deleting or silently discarding saved notes', () => {
+    const existing: Note = {
+      id: 'existing',
+      title: 'Сохранена',
+      items: [],
+      createdAt: '2026-09-01T10:00:00.000Z',
+      updatedAt: '2026-09-01T10:00:00.000Z',
+      revision: 3,
+    }
+    const port = new InMemoryStoragePort({
+      [NOTES_STORAGE_KEY]: JSON.stringify({ schemaVersion: 2, notes: [existing] }),
+    })
+    const failingPort = new Proxy(port, {
+      get(target, prop, receiver) {
+        if (prop === 'setItem') {
+          return () => {
+            throw new DOMException('QuotaExceeded', 'QuotaExceededError')
+          }
+        }
+        return Reflect.get(target, prop, receiver)
+      },
+    })
+    const repository = createBrowserNotesRepository(failingPort)
+    const useNotesStore = createNotesStore(createDependencies(repository))
+    const store = useNotesStore()
+    store.initialize()
+    expect(store.notes.map(note => note.id)).toEqual(['existing'])
+
+    const result = store.updateNote('existing', { title: 'Другое', items: [] })
+
+    expect(result).toEqual({ ok: false, reason: 'persistence' })
+    expect(store.notes.map(note => note.id)).toEqual(['existing'])
+    expect(JSON.parse(port.readItem(NOTES_STORAGE_KEY)!).notes[0].title).toBe('Сохранена')
   })
 })

@@ -6,7 +6,7 @@ import { useNotesStore } from '../stores/notes'
 useHead({ title: 'Заметки' })
 
 const notesStore = useNotesStore()
-const { notes, isInitialized, error } = storeToRefs(notesStore)
+const { notes, isInitialized, error, storageBlocker } = storeToRefs(notesStore)
 const { message } = useOperationStatus()
 const {
   notePendingDeletion,
@@ -15,6 +15,33 @@ const {
   cancelDeletion,
   confirmDeletion,
 } = useNoteDeletion()
+const isResetPending = ref(false)
+const isResetting = ref(false)
+
+const blockerReason = computed(() =>
+  storageBlocker.value?.kind === 'future-version'
+    ? 'Сохранённые данные созданы более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок, чтобы продолжить работу в этой версии.'
+    : 'Сохранённые данные заметок не удалось прочитать. Сброс вернёт приложение в рабочее состояние, но удалит сохранённые заметки.',
+)
+
+const requestReset = (): void => {
+  isResetPending.value = true
+}
+
+const cancelReset = (): void => {
+  isResetPending.value = false
+}
+
+const confirmReset = async (): Promise<void> => {
+  isResetting.value = true
+  const result = notesStore.resetSavedNotes()
+  isResetting.value = false
+  isResetPending.value = false
+
+  if (result.ok) {
+    message.value = 'Сохранённые данные заметок сброшены.'
+  }
+}
 
 const handleStorageChange = (event: StorageEvent): void => {
   // A null key means storage.clear() wiped everything in another tab.
@@ -59,9 +86,18 @@ onBeforeUnmount(() => {
       Загружаем заметки…
     </p>
 
-    <p v-if="isInitialized && error" class="notes-page__error">
-      {{ error }}
-    </p>
+    <div v-if="isInitialized && error" class="notes-page__error notes-page__error-box">
+      <p>{{ error }}</p>
+      <button
+        v-if="storageBlocker"
+        class="button button--danger"
+        type="button"
+        :disabled="isResetting"
+        @click="requestReset"
+      >
+        {{ isResetting ? 'Сбрасываем…' : 'Сбросить данные заметок' }}
+      </button>
+    </div>
 
     <div v-if="isInitialized && !error && notes.length === 0" class="empty-state">
       <span class="empty-state__icon">✦</span>
@@ -80,6 +116,16 @@ onBeforeUnmount(() => {
         @delete="requestDeletion"
       />
     </div>
+
+    <ConfirmDialog
+      :open="isResetPending"
+      title="Сбросить сохранённые данные заметок?"
+      :description="blockerReason"
+      confirm-label="Сбросить данные"
+      destructive
+      @cancel="cancelReset"
+      @confirm="confirmReset"
+    />
 
     <ConfirmDialog
       :open="notePendingDeletion !== null"
@@ -128,8 +174,17 @@ onBeforeUnmount(() => {
     background: var(--color-surface);
   }
 
-  &__error {
+  &__error-box {
+    display: grid;
+    justify-items: start;
+    @include rem(gap, 16px);
+    border-color: var(--color-danger);
     color: var(--color-danger);
+
+    p {
+      margin: 0;
+      line-height: 1.5;
+    }
   }
 }
 

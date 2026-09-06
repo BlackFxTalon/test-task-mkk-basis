@@ -7,6 +7,7 @@ import {
   type NoteInput,
   type NoteValidationFailure,
 } from '../domain/noteInput'
+import { NotesStorageError } from '../domain/notesStorage'
 import { browserNotesRepository } from '../repositories/browserNotesRepository'
 
 export type CreateNoteResult =
@@ -29,6 +30,14 @@ export type DeleteNoteResult =
   | { ok: true, note: Note }
   | { ok: false, reason: 'not-found' | 'persistence' }
 
+export type ResetNotesResult =
+  | { ok: true }
+  | { ok: false, reason: 'persistence' }
+
+export interface NotesStorageBlocker {
+  kind: 'corrupted' | 'future-version'
+}
+
 export interface NotesStoreDependencies {
   repository: NotesRepository
   createId: () => string
@@ -48,15 +57,27 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
     const notes = ref<Note[]>([])
     const isInitialized = ref(false)
     const error = ref<string | null>(null)
+    const storageBlocker = ref<NotesStorageBlocker | null>(null)
+
+    const toStorageFailure = (caught: unknown): NotesStorageBlocker => {
+      if (caught instanceof NotesStorageError) {
+        return { kind: caught.failure }
+      }
+      return { kind: 'corrupted' }
+    }
 
     const initialize = (): void => {
       try {
         notes.value = sortByUpdatedAt(dependencies.repository.read())
         error.value = null
+        storageBlocker.value = null
       }
-      catch {
+      catch (caught) {
         notes.value = []
-        error.value = 'Не удалось загрузить заметки.'
+        storageBlocker.value = toStorageFailure(caught)
+        error.value = storageBlocker.value.kind === 'future-version'
+          ? 'Данные заметок сохранены более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок.'
+          : 'Сохранённые данные заметок повреждены.'
       }
       finally {
         isInitialized.value = true
@@ -67,11 +88,41 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       try {
         notes.value = sortByUpdatedAt(dependencies.repository.read())
         error.value = null
+        storageBlocker.value = null
         return true
       }
-      catch {
+      catch (caught) {
+        storageBlocker.value = toStorageFailure(caught)
+        error.value = storageBlocker.value.kind === 'future-version'
+          ? 'Данные заметок сохранены более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок.'
+          : 'Сохранённые данные заметок повреждены.'
         return false
       }
+    }
+
+    const resetSavedNotes = (): ResetNotesResult => {
+      try {
+        dependencies.repository.reset()
+      }
+      catch {
+        error.value = 'Не удалось сбросить сохранённые данные заметок. Попробуйте ещё раз.'
+        return { ok: false, reason: 'persistence' }
+      }
+
+      notes.value = []
+      storageBlocker.value = null
+      error.value = null
+      return { ok: true }
+    }
+
+    const hasStoredDataAccess = (): boolean => {
+      if (storageBlocker.value === null) {
+        return true
+      }
+      error.value = storageBlocker.value.kind === 'future-version'
+        ? 'Данные заметок сохранены более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок.'
+        : 'Сохранённые данные заметок повреждены.'
+      return false
     }
 
     const getNote = (id: string): Note | null => {
@@ -80,6 +131,10 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
     }
 
     const commitNotes = (nextNotes: Note[], failureMessage: string): boolean => {
+      if (!hasStoredDataAccess()) {
+        return false
+      }
+
       try {
         dependencies.repository.write(nextNotes)
       }
@@ -99,6 +154,10 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
     }
 
     const createNote = (input: NoteInput): CreateNoteResult => {
+      if (!hasStoredDataAccess()) {
+        return { ok: false, reason: 'persistence' }
+      }
+
       const normalized = normalizeNoteInput(input)
       if (!normalized.ok) {
         return normalized
@@ -123,6 +182,10 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
     }
 
     const updateNote = (id: string, input: NoteInput, options: UpdateNoteOptions = {}): UpdateNoteResult => {
+      if (!hasStoredDataAccess()) {
+        return { ok: false, reason: 'persistence' }
+      }
+
       const existingNote = notes.value.find(note => note.id === id)
       if (!existingNote) {
         return { ok: false, reason: 'not-found' }
@@ -164,6 +227,10 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
     }
 
     const deleteNote = (id: string): DeleteNoteResult => {
+      if (!hasStoredDataAccess()) {
+        return { ok: false, reason: 'persistence' }
+      }
+
       const note = notes.value.find(candidate => candidate.id === id)
       if (!note) {
         return { ok: false, reason: 'not-found' }
@@ -184,8 +251,10 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       notes,
       isInitialized,
       error,
+      storageBlocker,
       initialize,
       refresh,
+      resetSavedNotes,
       getNote,
       hasNoteChanged,
       createNote,

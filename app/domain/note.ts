@@ -19,4 +19,5 @@ export interface Note {
 export interface NotesRepository {
   read(): Note[]
   write(notes: Note[]): void
+  reset(): void
 }

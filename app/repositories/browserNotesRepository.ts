@@ -1,44 +1,39 @@
 import type { Note, NotesRepository } from '../domain/note'
-
-interface NotesEnvelope {
-  schemaVersion: 1
-  notes: Note[]
-}
+import {
+  readNotesEnvelope,
+  serializeNotesEnvelope,
+} from '../domain/notesStorage'
 
 export const NOTES_STORAGE_KEY = 'basis-notes:notes'
 
-const isNotesEnvelope = (value: unknown): value is NotesEnvelope => {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  const candidate = value as Partial<NotesEnvelope>
-  return candidate.schemaVersion === 1 && Array.isArray(candidate.notes)
+export interface NotesStoragePort {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
 }
 
-class BrowserNotesRepository implements NotesRepository {
+export const createBrowserNotesRepository = (storage: NotesStoragePort): NotesRepository => ({
   read(): Note[] {
-    const serialized = localStorage.getItem(NOTES_STORAGE_KEY)
-    if (serialized === null) {
-      return []
+    const serialized = storage.getItem(NOTES_STORAGE_KEY)
+    const parsed = readNotesEnvelope(serialized)
+    const currentSerialized = serializeNotesEnvelope(parsed.notes)
+    if (serialized !== null && serialized !== currentSerialized) {
+      storage.setItem(NOTES_STORAGE_KEY, currentSerialized)
     }
-
-    const parsed: unknown = JSON.parse(serialized)
-    if (!isNotesEnvelope(parsed)) {
-      throw new Error('Unsupported notes storage format')
-    }
-
-    return structuredClone(parsed.notes)
-  }
+    return parsed.notes
+  },
 
   write(notes: Note[]): void {
-    const envelope: NotesEnvelope = {
-      schemaVersion: 1,
-      notes,
-    }
+    storage.setItem(NOTES_STORAGE_KEY, serializeNotesEnvelope(notes))
+  },
 
-    localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(envelope))
-  }
-}
+  reset(): void {
+    storage.removeItem(NOTES_STORAGE_KEY)
+  },
+})
 
-export const browserNotesRepository: NotesRepository = new BrowserNotesRepository()
+export const browserNotesRepository: NotesRepository = createBrowserNotesRepository({
+  getItem: key => window.localStorage.getItem(key),
+  setItem: (key, value) => window.localStorage.setItem(key, value),
+  removeItem: key => window.localStorage.removeItem(key),
+})

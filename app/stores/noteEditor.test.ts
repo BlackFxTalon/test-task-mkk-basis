@@ -415,6 +415,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     const notesRepository: NotesRepository = {
       read: () => structuredClone(storedNotes),
       write: notes => { storedNotes = structuredClone(notes) },
+      reset: () => { storedNotes = [] },
     }
     const notesDependencies: NotesStoreDependencies = {
       repository: notesRepository,
@@ -706,6 +707,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     const notesRepository: NotesRepository = {
       read: () => structuredClone(externalNotes),
       write: () => {},
+      reset: () => { externalNotes = [] },
     }
     const useNotesStore = createNotesStore({
       repository: notesRepository,
