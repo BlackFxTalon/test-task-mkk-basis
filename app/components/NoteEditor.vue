@@ -665,12 +665,14 @@ onBeforeUnmount(() => {
 
           <ol v-else class="items-editor__list">
             <li v-for="(item, index) in items" :key="item.id" class="item-row">
-              <input
-                class="item-row__checkbox"
-                type="checkbox"
-                :checked="item.completed"
-                @change="updateItemCompleted(index, $event)"
-              >
+              <label class="item-row__checkbox">
+                <span class="visually-hidden">Выполнено</span>
+                <input
+                  type="checkbox"
+                  :checked="item.completed"
+                  @change="updateItemCompleted(index, $event)"
+                >
+              </label>
               <div class="item-row__field">
                 <label :for="`note-item-${item.id}`">Пункт {{ index + 1 }}</label>
                 <input
@@ -995,10 +997,22 @@ onBeforeUnmount(() => {
   background: var(--color-surface-muted);
 
   &__checkbox {
-    @include rem(width, 22px);
-    @include rem(height, 22px);
-    margin: 0;
-    accent-color: var(--color-accent-strong);
+    --hit-size: #{to-rem(44px)};
+    --input-size: #{to-rem(22px)};
+
+    display: grid;
+    width: var(--hit-size);
+    height: var(--hit-size);
+    place-items: center;
+    margin: calc((var(--hit-size) - var(--input-size)) / -2);
+    cursor: pointer;
+
+    input {
+      width: var(--input-size);
+      height: var(--input-size);
+      margin: 0;
+      accent-color: var(--color-accent-strong);
+    }
   }
 
   &__field {

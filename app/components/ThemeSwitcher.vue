@@ -20,6 +20,7 @@ const { theme, setTheme } = useTheme()
       :title="option.label"
       @click="setTheme(option.value)"
     >
+      <span class="visually-hidden">{{ option.label }}</span>
       <svg
         v-if="option.value === 'system'"
         class="theme-switcher__icon"
