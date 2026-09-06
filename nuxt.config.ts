@@ -21,6 +21,9 @@ export default defineNuxtConfig({
     strict: true,
     typeCheck: true,
   },
+  experimental: {
+    viewTransition: true,
+  },
   app: {
     head: {
       htmlAttrs: { lang: 'ru' },

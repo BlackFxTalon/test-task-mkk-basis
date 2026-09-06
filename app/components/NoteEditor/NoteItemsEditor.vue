@@ -67,7 +67,7 @@ const commitText = (): void => {
           </span>
         </div>
         <button
-          class="item-row__remove"
+          class="button item-row__remove"
           type="button"
           @click="removeItem(index)"
         >
@@ -137,6 +137,7 @@ const commitText = (): void => {
       height: var(--input-size);
       margin: 0;
       accent-color: var(--color-accent-strong);
+      cursor: inherit;
     }
   }
 

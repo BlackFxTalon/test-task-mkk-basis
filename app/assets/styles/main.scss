@@ -123,3 +123,23 @@ img {
     animation-iteration-count: 1 !important;
   }
 }
+
+::view-transition-old(root) {
+  animation: page-transition-out 200ms ease forwards;
+}
+
+::view-transition-new(root) {
+  animation: page-transition-in 200ms ease forwards;
+}
+
+@keyframes page-transition-out {
+  to {
+    opacity: 0.3;
+  }
+}
+
+@keyframes page-transition-in {
+  from {
+    opacity: 0.3;
+  }
+}

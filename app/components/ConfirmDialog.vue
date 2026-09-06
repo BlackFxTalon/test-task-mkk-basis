@@ -20,6 +20,17 @@ const emit = defineEmits<{
 
 const dialog = useTemplateRef<HTMLDialogElement>('dialog');
 const cancelButton = useTemplateRef<HTMLButtonElement>('cancelButton');
+
+const descriptionSnapshot = ref(props.description);
+watch(
+  () => props.description,
+  (value) => {
+    if (value.length > 0) {
+      descriptionSnapshot.value = value;
+    }
+  },
+);
+
 let triggerElement: HTMLElement | null = null;
 let openedModally = false;
 const fallbackInertElements = new Set<HTMLElement>();
@@ -113,8 +124,16 @@ const closeDialog = (): void => {
 };
 
 const openDialog = async (): Promise<void> => {
-  const element = dialog.value;
-  if (!element || element.open) {
+  let element = dialog.value;
+  if (!element) {
+    await nextTick();
+    element = dialog.value;
+    if (!element) {
+      return;
+    }
+  }
+
+  if (element.open) {
     return;
   }
 
@@ -209,7 +228,7 @@ onBeforeUnmount(closeInstant);
     >
       <div class="confirm-dialog__content">
         <h2>{{ title }}</h2>
-        <p>{{ description }}</p>
+        <p>{{ descriptionSnapshot }}</p>
         <div class="confirm-dialog__actions">
           <template v-if="customActions">
             <slot name="actions" />

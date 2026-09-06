@@ -63,9 +63,11 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="notes-page">
-    <p v-if="message" class="status-message">
-      {{ message }}
-    </p>
+    <Transition name="status-message">
+      <p v-if="message" class="status-message">
+        {{ message }}
+      </p>
+    </Transition>
 
     <header class="notes-page__header">
       <NuxtLink
@@ -175,6 +177,14 @@ onBeforeUnmount(() => {
   border-radius: var(--radius-control);
   background: var(--color-surface-muted);
   font-weight: 700;
+}
+
+.status-message-leave-active {
+  transition: opacity 160ms ease;
+}
+
+.status-message-leave-to {
+  opacity: 0;
 }
 
 .empty-state {
