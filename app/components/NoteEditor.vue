@@ -5,10 +5,9 @@ import {
   type Note,
   type TodoItem,
 } from '../domain/note'
-import type { HistoryOperationType, HistoryResult } from '../domain/noteHistory'
-import { NOTES_STORAGE_KEY } from '../repositories/browserNotesRepository'
 import { useNoteEditorStore } from '../stores/noteEditor'
 import { useNotesStore } from '../stores/notes'
+import type { EditorDialogKind } from './NoteEditor/EditorDialogs.vue'
 
 const props = defineProps<{
   noteId?: string
@@ -25,17 +24,25 @@ const {
   cancelDeletion,
   confirmDeletion,
 } = useNoteDeletion()
-const titleInput = useTemplateRef<HTMLInputElement>('titleInput')
+
+const { permitNavigation } = useUnsavedChangesGuard({
+  isDirty: () => editorStore.isDirty,
+  persistDraft: () => editorStore.persistDraft(),
+  onBlockedNavigation: (target) => {
+    pendingNavigation.value = target
+    activeDialog.value = 'navigation'
+  },
+})
+
 const isReady = ref(false)
 const isSaving = ref(false)
 const isNotFound = ref(false)
 const titleError = ref<string | null>(null)
 const formError = ref<string | null>(null)
-const historyMessage = ref<string | null>(null)
-const activeDialog = ref<'cancel' | 'delete' | 'navigation' | 'recovery' | 'conflict' | 'deleted' | 'deleted-recovery' | null>(null)
+const activeDialog = ref<EditorDialogKind | null>(null)
 const pendingNavigation = ref<string | null>(null)
-let allowNavigation = false
-let historyMessageTimeout: ReturnType<typeof setTimeout> | null = null
+
+let disposed = false
 
 const isEditing = computed(() => props.noteId !== undefined)
 const pageTitle = computed(() => isEditing.value ? 'Редактирование заметки' : 'Новая заметка')
@@ -49,65 +56,30 @@ const isSaveDisabled = computed(() =>
   || (isEditing.value && !editorStore.isDirty),
 )
 
-const DIALOG_TEXT: Record<NonNullable<typeof activeDialog.value>, { title: string, confirmLabel: string, cancelLabel: string, description?: string }> = {
-  cancel: {
-    title: 'Выйти из редактора?',
-    confirmLabel: 'Выйти без сохранения',
-    cancelLabel: 'Отмена',
-  },
-  delete: {
-    title: 'Удалить заметку?',
-    confirmLabel: 'Удалить заметку',
-    cancelLabel: 'Отмена',
-  },
-  navigation: {
-    title: 'Выйти из редактора?',
-    confirmLabel: 'Выйти без сохранения',
-    cancelLabel: 'Отмена',
-  },
-  recovery: {
-    title: 'Восстановить черновик?',
-    description: 'Для этой вкладки найдены несохранённые изменения. Их можно восстановить или удалить.',
-    confirmLabel: 'Восстановить черновик',
-    cancelLabel: 'Удалить черновик',
-  },
-  conflict: {
-    title: 'Заметка изменена в другой вкладке',
-    description: 'Пока вы редактировали заметку, её сохранили в другой вкладке. Выберите, как поступить с вашими изменениями.',
-    confirmLabel: 'Продолжить редактирование',
-    cancelLabel: 'Продолжить редактирование',
-  },
-  deleted: {
-    title: 'Заметка удалена в другой вкладке',
-    description: 'Заметку удалили, пока вы её редактировали. Ваша работа осталась в этом редакторе: сохраните её как новую заметку или выйдите без сохранения.',
-    confirmLabel: 'Выйти без сохранения',
-    cancelLabel: 'Продолжить редактирование',
-  },
-  'deleted-recovery': {
-    title: 'Заметка удалена, но есть несохранённая работа',
-    description: 'Эта заметка больше не существует, но для вкладки найден её несохранённый черновик. Его можно восстановить как новую заметку или удалить.',
-    confirmLabel: 'Восстановить как новую заметку',
-    cancelLabel: 'Удалить черновик',
-  },
-}
-
-const dialogTitle = computed(() => DIALOG_TEXT[activeDialog.value ?? 'cancel'].title)
 const dialogDescription = computed(() => {
   if (activeDialog.value === 'delete') {
     return deletionDescription.value
   }
-  return DIALOG_TEXT[activeDialog.value ?? 'cancel'].description ?? 'Несохранённые изменения будут потеряны.'
+  if (activeDialog.value === 'recovery') {
+    return 'Для этой вкладки найдены несохранённые изменения. Их можно восстановить или удалить.'
+  }
+  if (activeDialog.value === 'conflict') {
+    return 'Пока вы редактировали заметку, её сохранили в другой вкладке. Выберите, как поступить с вашими изменениями.'
+  }
+  if (activeDialog.value === 'deleted') {
+    return 'Заметку удалили, пока вы её редактировали. Ваша работа осталась в этом редакторе: сохраните её как новую заметку или выйдите без сохранения.'
+  }
+  if (activeDialog.value === 'deleted-recovery') {
+    return 'Эта заметка больше не существует, но для вкладки найден её несохранённый черновик. Его можно восстановить как новую заметку или удалить.'
+  }
+  return 'Несохранённые изменения будут потеряны.'
 })
-const dialogConfirmLabel = computed(() => DIALOG_TEXT[activeDialog.value ?? 'cancel'].confirmLabel)
-const dialogCancelLabel = computed(() => DIALOG_TEXT[activeDialog.value ?? 'cancel'].cancelLabel)
 
 const sessionIdFromRoute = (): string | undefined => {
   const value = route.query.session
   const sessionId = Array.isArray(value) ? value[0] : value
   return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : undefined
 }
-
-let disposed = false
 
 const startOwnedSession = async (
   input: {
@@ -201,13 +173,13 @@ const removeItem = (index: number): void => {
   formError.value = null
 }
 
-const updateItemText = (index: number, event: Event): void => {
-  editorStore.setItemText(index, (event.target as HTMLInputElement).value)
+const updateItemText = (index: number, value: string): void => {
+  editorStore.setItemText(index, value)
   formError.value = null
 }
 
-const updateItemCompleted = (index: number, event: Event): void => {
-  editorStore.setItemCompleted(index, (event.target as HTMLInputElement).checked)
+const updateItemCompleted = (index: number, completed: boolean): void => {
+  editorStore.setItemCompleted(index, completed)
   formError.value = null
 }
 
@@ -216,9 +188,11 @@ const clearErrors = (): void => {
   formError.value = null
 }
 
+const titleField = useTemplateRef<{ focus: () => void }>('titleField')
+
 const focusInvalidTitle = async (): Promise<void> => {
   await nextTick()
-  titleInput.value?.focus()
+  titleField.value?.focus()
 }
 
 type SaveFailureReason = 'title-required' | 'title-too-long' | 'item-too-long' | 'persistence'
@@ -275,7 +249,29 @@ const saveNote = async (): Promise<void> => {
   if (result.ok) {
     announce(sessionNoteId === null ? 'Заметка создана.' : 'Изменения сохранены.')
   }
-  allowNavigation = true
+  permitNavigation()
+  await navigateTo('/')
+}
+
+const performSaveAsNew = async (): Promise<void> => {
+  editorStore.commitText()
+  const result = notesStore.createNote(editorStore.getInput())
+
+  if (!result.ok) {
+    isSaving.value = false
+    activeDialog.value = null
+    await handleSaveValidationFailure(result.reason)
+    return
+  }
+
+  if (!editorStore.finishSession()) {
+    activeDialog.value = null
+    return
+  }
+
+  announce('Заметка создана.')
+  permitNavigation()
+  activeDialog.value = null
   await navigateTo('/')
 }
 
@@ -320,7 +316,7 @@ const exitEditor = async (target: string): Promise<void> => {
   if (!editorStore.cancelSession()) {
     return
   }
-  allowNavigation = true
+  permitNavigation()
   activeDialog.value = null
   pendingNavigation.value = null
   await navigateTo(target)
@@ -376,28 +372,6 @@ const conflictReloadLatest = (): void => {
   }
 }
 
-const performSaveAsNew = async (): Promise<void> => {
-  editorStore.commitText()
-  const result = notesStore.createNote(editorStore.getInput())
-
-  if (!result.ok) {
-    isSaving.value = false
-    activeDialog.value = null
-    await handleSaveValidationFailure(result.reason)
-    return
-  }
-
-  if (!editorStore.finishSession()) {
-    activeDialog.value = null
-    return
-  }
-
-  announce('Заметка создана.')
-  allowNavigation = true
-  activeDialog.value = null
-  await navigateTo('/')
-}
-
 const conflictSaveAsNew = async (): Promise<void> => {
   await performSaveAsNew()
 }
@@ -425,7 +399,7 @@ const conflictOverwrite = (): void => {
         return
       }
       announce('Изменения сохранены.')
-      allowNavigation = true
+      permitNavigation()
       activeDialog.value = null
       void navigateTo('/')
     }
@@ -438,155 +412,33 @@ const conflictOverwrite = (): void => {
   }
 
   announce('Изменения сохранены.')
-  allowNavigation = true
+  permitNavigation()
   activeDialog.value = null
   void navigateTo('/')
-}
-
-const deletedSaveAsNew = async (): Promise<void> => {
-  await performSaveAsNew()
 }
 
 const deletedExitWithoutSaving = async (): Promise<void> => {
   await exitEditor('/')
 }
 
-const handleStorageChange = (event: StorageEvent): void => {
-  // A null key means storage.clear() wiped everything in another tab.
-  if (event.key !== NOTES_STORAGE_KEY && event.key !== null) {
-    return
-  }
+const { historyMessage, undo, redo } = useNoteHistoryControls(editorStore)
 
-  if (!notesStore.refresh()) {
-    return
-  }
-
-  if (props.noteId === undefined || !isReady.value) {
-    return
-  }
-
-  const externalNote = notesStore.getNote(props.noteId)
-  const outcome = editorStore.applyExternalChange(externalNote)
-
-  if (outcome === 'deleted') {
-    if (editorStore.isDirty) {
+useCrossTabNoteSync({
+  noteId: () => props.noteId,
+  isReady: () => isReady.value,
+  onNoteDeleted: (hasLocalChanges) => {
+    if (hasLocalChanges) {
       activeDialog.value = 'deleted'
     }
     else {
       isNotFound.value = true
       editorStore.closeSession()
     }
-  }
-}
-
-const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
-  if (!editorStore.isDirty) {
-    return
-  }
-
-  event.preventDefault()
-  event.returnValue = ''
-}
-
-const showHistoryMessage = (message: string): void => {
-  historyMessage.value = message
-  if (historyMessageTimeout !== null) {
-    clearTimeout(historyMessageTimeout)
-  }
-  historyMessageTimeout = setTimeout(() => {
-    historyMessage.value = null
-    historyMessageTimeout = null
-  }, 3000)
-}
-
-const historyOperationLabels: Record<HistoryOperationType, string> = {
-  title: 'Изменение заголовка',
-  'item-text': 'Изменение пункта',
-  'item-completed': 'Изменение отметки пункта',
-  'item-inserted': 'Добавление пункта',
-  'item-removed': 'Удаление пункта',
-}
-
-const formatHistoryMessage = (result: HistoryResult): string =>
-  `${historyOperationLabels[result.operation]} ${result.action === 'undo' ? 'отменено' : 'повторено'}.`
-
-const undo = (): void => {
-  const result = editorStore.undo()
-  if (result) {
-    showHistoryMessage(formatHistoryMessage(result))
-  }
-}
-
-const redo = (): void => {
-  const result = editorStore.redo()
-  if (result) {
-    showHistoryMessage(formatHistoryMessage(result))
-  }
-}
-
-const isTextEditingTarget = (target: EventTarget | null): boolean =>
-  target instanceof HTMLElement
-  && target.matches([
-    'textarea',
-    '[contenteditable="true"]',
-    'input:not([type])',
-    'input[type="text"]',
-    'input[type="search"]',
-    'input[type="email"]',
-    'input[type="url"]',
-    'input[type="tel"]',
-    'input[type="password"]',
-  ].join(', '))
-
-const handleHistoryShortcut = (event: KeyboardEvent): void => {
-  if ((!event.ctrlKey && !event.metaKey) || event.altKey || isTextEditingTarget(event.target)) {
-    return
-  }
-
-  const key = event.key.toLowerCase()
-  if (key === 'z' && event.shiftKey) {
-    event.preventDefault()
-    redo()
-  }
-  else if (key === 'z') {
-    event.preventDefault()
-    undo()
-  }
-  else if (key === 'y') {
-    event.preventDefault()
-    redo()
-  }
-}
-
-onBeforeRouteLeave((to) => {
-  if (allowNavigation || !editorStore.isDirty) {
-    return true
-  }
-
-  pendingNavigation.value = to.fullPath
-  activeDialog.value = 'navigation'
-  return false
+  },
 })
 
-const handlePageHide = (): void => {
-  editorStore.persistDraft()
-}
-
-onMounted(() => {
-  window.addEventListener('beforeunload', handleBeforeUnload)
-  window.addEventListener('pagehide', handlePageHide)
-  window.addEventListener('keydown', handleHistoryShortcut)
-  window.addEventListener('storage', handleStorageChange)
-})
 onBeforeUnmount(() => {
   disposed = true
-  window.removeEventListener('beforeunload', handleBeforeUnload)
-  window.removeEventListener('pagehide', handlePageHide)
-  window.removeEventListener('keydown', handleHistoryShortcut)
-  window.removeEventListener('storage', handleStorageChange)
-  if (historyMessageTimeout !== null) {
-    clearTimeout(historyMessageTimeout)
-  }
   editorStore.closeSession()
 })
 </script>
@@ -631,102 +483,34 @@ onBeforeUnmount(() => {
       </p>
 
       <form class="note-form" novalidate @submit.prevent="saveNote">
-        <div class="field">
-          <div class="field__label-row">
-            <label for="note-title">Название</label>
-            <span>{{ title.length }} / {{ NOTE_TITLE_MAX_LENGTH }}</span>
-          </div>
-          <input
-            id="note-title"
-            ref="titleInput"
-            v-model="title"
-            name="title"
-            type="text"
-            :maxlength="NOTE_TITLE_MAX_LENGTH"
-            autocomplete="off"
-            :class="{ 'field__input--invalid': Boolean(titleError) }"
-            @input="clearErrors"
-            @blur="editorStore.commitText"
-          >
-          <p id="note-title-help" class="field__help">
-            Обязательное поле, до {{ NOTE_TITLE_MAX_LENGTH }} символов.
-          </p>
-          <p v-if="titleError" id="note-title-error" class="field__error">
-            {{ titleError }}
-          </p>
-        </div>
+        <NoteTitleField
+          ref="titleField"
+          v-model="title"
+          :error="titleError"
+          @clear-error="clearErrors"
+          @commit="editorStore.commitText"
+        />
 
-        <fieldset class="items-editor">
-          <legend>Список задач</legend>
-
-          <p v-if="items.length === 0" class="items-editor__empty">
-            Пунктов пока нет. Можно сохранить заметку без них.
-          </p>
-
-          <ol v-else class="items-editor__list">
-            <li v-for="(item, index) in items" :key="item.id" class="item-row">
-              <label class="item-row__checkbox">
-                <span class="visually-hidden">Выполнено</span>
-                <input
-                  type="checkbox"
-                  :checked="item.completed"
-                  @change="updateItemCompleted(index, $event)"
-                >
-              </label>
-              <div class="item-row__field">
-                <label :for="`note-item-${item.id}`">Пункт {{ index + 1 }}</label>
-                <input
-                  :id="`note-item-${item.id}`"
-                  type="text"
-                  :value="item.text"
-                  :maxlength="NOTE_ITEM_MAX_LENGTH"
-                  @input="updateItemText(index, $event)"
-                  @blur="editorStore.commitText"
-                >
-                <span :id="`note-item-count-${item.id}`" class="item-row__count">
-                  {{ item.text.length }} / {{ NOTE_ITEM_MAX_LENGTH }}
-                </span>
-              </div>
-              <button
-                class="item-row__remove"
-                type="button"
-                @click="removeItem(index)"
-              >
-                Удалить
-              </button>
-            </li>
-          </ol>
-
-          <button class="button button--secondary" type="button" @click="addItem">
-            Добавить пункт
-          </button>
-        </fieldset>
+        <NoteItemsEditor
+          :items="items"
+          @add="addItem"
+          @remove="removeItem"
+          @update-text="updateItemText"
+          @update-completed="updateItemCompleted"
+          @commit-text="editorStore.commitText"
+        />
 
         <p v-if="formError" class="note-form__error">{{ formError }}</p>
         <p v-if="notesStore.error" class="note-form__error">{{ notesStore.error }}</p>
         <p v-if="editorStore.draftError" class="note-form__error">{{ editorStore.draftError }}</p>
 
-        <div class="history-controls">
-          <button
-            class="button button--secondary"
-            type="button"
-            :disabled="!editorStore.canUndo"
-            @click="undo"
-          >
-            Отменить изменение
-          </button>
-          <button
-            class="button button--secondary"
-            type="button"
-            :disabled="!editorStore.canRedo"
-            @click="redo"
-          >
-            Повторить изменение
-          </button>
-          <p v-if="historyMessage" class="history-controls__message">
-            {{ historyMessage }}
-          </p>
-        </div>
+        <NoteHistoryControls
+          :can-undo="editorStore.canUndo"
+          :can-redo="editorStore.canRedo"
+          :message="historyMessage"
+          @undo="undo"
+          @redo="redo"
+        />
 
         <div class="note-form__actions">
           <button
@@ -752,40 +536,18 @@ onBeforeUnmount(() => {
       </form>
     </template>
 
-    <ConfirmDialog
-      :open="activeDialog !== null"
-      :title="dialogTitle"
+    <EditorDialogs
+      v-if="activeDialog !== null"
+      :key="activeDialog"
+      :kind="activeDialog"
       :description="dialogDescription"
-      :confirm-label="dialogConfirmLabel"
-      :cancel-label="dialogCancelLabel"
-      :destructive="activeDialog === 'delete'"
-      :custom-actions="activeDialog === 'conflict' || activeDialog === 'deleted'"
       @cancel="closeDialog"
       @confirm="confirmDialog"
-    >
-      <template v-if="activeDialog === 'conflict'" #actions>
-        <button class="button button--secondary" type="button" @click="closeDialog">
-          Продолжить редактирование
-        </button>
-        <button class="button button--secondary" type="button" @click="conflictReloadLatest">
-          Загрузить актуальную версию
-        </button>
-        <button class="button button--secondary" type="button" @click="conflictSaveAsNew">
-          Сохранить как новую заметку
-        </button>
-        <button class="button button--danger" type="button" @click="conflictOverwrite">
-          Перезаписать изменения другой вкладки
-        </button>
-      </template>
-      <template v-else-if="activeDialog === 'deleted'" #actions>
-        <button class="button button--secondary" type="button" @click="deletedSaveAsNew">
-          Сохранить как новую заметку
-        </button>
-        <button class="button button--danger" type="button" @click="deletedExitWithoutSaving">
-          Выйти без сохранения
-        </button>
-      </template>
-    </ConfirmDialog>
+      @restore-latest="conflictReloadLatest"
+      @save-as-new="conflictSaveAsNew"
+      @overwrite-external="conflictOverwrite"
+      @exit-without-saving="deletedExitWithoutSaving"
+    />
   </section>
 </template>
 
@@ -890,180 +652,6 @@ onBeforeUnmount(() => {
       cursor: not-allowed;
       opacity: 0.55;
       transform: none;
-    }
-  }
-}
-
-.history-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  @include rem(gap, 12px);
-
-  &__message {
-    flex-basis: 100%;
-    margin: 0;
-    color: var(--color-text-muted);
-    font-weight: 650;
-  }
-}
-
-.field {
-  display: grid;
-  @include rem(gap, 9px);
-
-  &__label-row {
-    display: flex;
-    justify-content: space-between;
-    @include rem(gap, 16px);
-
-    label {
-      font-weight: 750;
-    }
-
-    span {
-      color: var(--color-text-muted);
-      @include rem(font-size, 14px);
-    }
-  }
-
-  input {
-    width: 100%;
-    @include rem(min-height, 48px);
-    @include rem(padding, 11px, 14px);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control);
-    color: var(--color-text);
-    background: var(--color-background);
-    font: inherit;
-
-    &.field__input--invalid {
-      border-color: var(--color-danger);
-    }
-  }
-
-  &__help,
-  &__error {
-    margin: 0;
-    @include rem(font-size, 14px);
-  }
-
-  &__help {
-    color: var(--color-text-muted);
-  }
-
-  &__error {
-    color: var(--color-danger);
-    font-weight: 650;
-  }
-}
-
-.items-editor {
-  display: grid;
-  @include rem(gap, 16px);
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-
-  legend {
-    @include rem(margin-bottom, 12px);
-    font-weight: 800;
-    @include rem(font-size, 20px);
-  }
-
-  &__empty {
-    margin: 0;
-    color: var(--color-text-muted);
-  }
-
-  &__list {
-    display: grid;
-    @include rem(gap, 14px);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-}
-
-.item-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  @include rem(gap, 12px);
-  @include rem(padding, 12px);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface-muted);
-
-  &__checkbox {
-    --hit-size: #{to-rem(44px)};
-    --input-size: #{to-rem(22px)};
-
-    display: grid;
-    width: var(--hit-size);
-    height: var(--hit-size);
-    place-items: center;
-    margin: calc((var(--hit-size) - var(--input-size)) / -2);
-    cursor: pointer;
-
-    input {
-      width: var(--input-size);
-      height: var(--input-size);
-      margin: 0;
-      accent-color: var(--color-accent-strong);
-    }
-  }
-
-  &__field {
-    display: grid;
-    @include rem(gap, 6px);
-
-    label,
-    span {
-      @include rem(font-size, 13px);
-    }
-
-    label {
-      font-weight: 700;
-    }
-
-    input {
-      width: 100%;
-      @include rem(min-height, 44px);
-      @include rem(padding, 9px, 12px);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-control);
-      color: var(--color-text);
-      background: var(--color-background);
-      font: inherit;
-    }
-  }
-
-  &__count {
-    color: var(--color-text-muted);
-  }
-
-  &__remove {
-    min-height: #{to-rem(44px)};
-    padding-inline: #{to-rem(12px)};
-    border: 1px solid currentColor;
-    border-radius: var(--radius-control);
-    color: var(--color-danger);
-    background: transparent;
-    cursor: pointer;
-    font: inherit;
-    font-weight: 700;
-  }
-}
-
-@media (max-width: #{to-rem(640px)}) {
-  .item-row {
-    grid-template-columns: auto minmax(0, 1fr);
-
-    &__remove {
-      grid-column: 2;
-      justify-self: start;
     }
   }
 }

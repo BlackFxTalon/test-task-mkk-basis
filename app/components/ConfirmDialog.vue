@@ -125,6 +125,10 @@ const requestCancel = (): void => {
   emit('cancel')
 }
 
+const requestConfirm = (): void => {
+  emit('confirm')
+}
+
 const handleKeydown = (event: KeyboardEvent): void => {
   const element = dialog.value
   if (!element) {
@@ -187,7 +191,7 @@ onBeforeUnmount(closeDialog)
               class="button"
               :class="destructive ? 'button--danger' : 'button--primary'"
               type="button"
-              @click="emit('confirm')"
+              @click="requestConfirm"
             >
               {{ confirmLabel }}
             </button>
