@@ -4,7 +4,10 @@ services:
     image: basis-notes-spa:latest
     container_name: basis-notes
     ports:
-      - "3000:80"
+      # Публикуем только на localhost — по спеке ("as localhost port 3000").
+      - "127.0.0.1:3000:80"
+    # Явно дублирует HEALTHCHECK образа: compose переопределяет его,
+    # поэтому значения нужно менять синхронно в обоих местах.
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
       interval: 10s
