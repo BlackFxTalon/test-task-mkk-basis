@@ -15,34 +15,34 @@ interface SessionOccupiedMessage {
 
 type SessionOwnershipMessage = SessionProbeMessage | SessionOccupiedMessage
 
-const CHANNEL_NAME = 'basis-notes:editing-sessions'
-const CLAIM_WAIT_MS = 120
+const CHANNEL_NAME = 'basis-notes:editing-sessions';
+const CLAIM_WAIT_MS = 120;
 
 const isSessionOwnershipMessage = (value: unknown): value is SessionOwnershipMessage => {
   if (!value || typeof value !== 'object') {
-    return false
+    return false;
   }
 
-  const candidate = value as Partial<SessionProbeMessage> & Partial<SessionOccupiedMessage>
+  const candidate = value as Partial<SessionProbeMessage> & Partial<SessionOccupiedMessage>;
   return (candidate.type === 'probe' || candidate.type === 'occupied')
     && typeof candidate.requestId === 'string'
     && typeof candidate.sessionId === 'string'
     && typeof candidate.ownerId === 'string'
-    && (candidate.type === 'probe' || typeof candidate.claimantId === 'string')
-}
+    && (candidate.type === 'probe' || typeof candidate.claimantId === 'string');
+};
 
 export const useEditingSessionOwnership = () => {
-  const ownerId = crypto.randomUUID()
+  const ownerId = crypto.randomUUID();
   const channel = typeof BroadcastChannel === 'undefined'
     ? null
-    : new BroadcastChannel(CHANNEL_NAME)
-  const occupiedRequests = new Set<string>()
-  let activeSessionId: string | null = null
+    : new BroadcastChannel(CHANNEL_NAME);
+  const occupiedRequests = new Set<string>();
+  let activeSessionId: string | null = null;
 
   if (channel) {
     channel.onmessage = (event: MessageEvent<unknown>): void => {
       if (!isSessionOwnershipMessage(event.data) || event.data.ownerId === ownerId) {
-        return
+        return;
       }
 
       if (event.data.type === 'probe' && event.data.sessionId === activeSessionId) {
@@ -52,51 +52,51 @@ export const useEditingSessionOwnership = () => {
           sessionId: event.data.sessionId,
           ownerId,
           claimantId: event.data.ownerId,
-        } satisfies SessionOccupiedMessage)
+        } satisfies SessionOccupiedMessage);
       }
       else if (event.data.type === 'occupied' && event.data.claimantId === ownerId) {
-        occupiedRequests.add(event.data.requestId)
+        occupiedRequests.add(event.data.requestId);
       }
-    }
+    };
   }
 
   const claimRequestedSession = async (sessionId: string | undefined): Promise<string | undefined> => {
     if (!sessionId || !channel) {
-      return sessionId
+      return sessionId;
     }
 
-    activeSessionId = sessionId
-    const requestId = crypto.randomUUID()
+    activeSessionId = sessionId;
+    const requestId = crypto.randomUUID();
     channel.postMessage({
       type: 'probe',
       requestId,
       sessionId,
       ownerId,
-    } satisfies SessionProbeMessage)
+    } satisfies SessionProbeMessage);
 
-    await new Promise(resolve => setTimeout(resolve, CLAIM_WAIT_MS))
-    const occupied = occupiedRequests.delete(requestId)
+    await new Promise(resolve => setTimeout(resolve, CLAIM_WAIT_MS));
+    const occupied = occupiedRequests.delete(requestId);
     if (occupied) {
-      activeSessionId = null
-      return undefined
+      activeSessionId = null;
+      return undefined;
     }
 
-    return sessionId
-  }
+    return sessionId;
+  };
 
   const ownSession = (sessionId: string): void => {
-    activeSessionId = sessionId
-  }
+    activeSessionId = sessionId;
+  };
 
   const releaseSession = (): void => {
-    activeSessionId = null
-    channel?.close()
-  }
+    activeSessionId = null;
+    channel?.close();
+  };
 
-  onBeforeUnmount(releaseSession)
+  onBeforeUnmount(releaseSession);
 
   return {
     claimRequestedSession,
     ownSession,
-  }
-}
+  };
+};

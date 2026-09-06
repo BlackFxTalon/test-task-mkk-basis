@@ -1,24 +1,28 @@
 <script setup lang="ts">
-import type { Note } from '../domain/note'
+import type { Note } from '../domain/note';
 
 const props = defineProps<{
   note: Note
-}>()
+}>();
 
 const emit = defineEmits<{
   delete: [note: Note]
-}>()
+}>();
 
-const previewItems = computed(() => props.note.items.slice(0, 3))
-const hiddenCount = computed(() => Math.max(0, props.note.items.length - previewItems.value.length))
-const completedCount = computed(() => props.note.items.filter(item => item.completed).length)
+const requestDelete = (): void => {
+  emit('delete', props.note);
+};
+
+const previewItems = computed(() => props.note.items.slice(0, 3));
+const hiddenCount = computed(() => Math.max(0, props.note.items.length - previewItems.value.length));
+const completedCount = computed(() => props.note.items.filter(item => item.completed).length);
 const progressLabel = computed(() => {
   if (props.note.items.length === 0) {
-    return 'Нет задач'
+    return 'Нет задач';
   }
 
-  return `${completedCount.value} из ${props.note.items.length} выполнено`
-})
+  return `${completedCount.value} из ${props.note.items.length} выполнено`;
+});
 </script>
 
 <template>
@@ -51,7 +55,7 @@ const progressLabel = computed(() => {
       <NuxtLink class="note-card__edit" :to="`/notes/${note.id}`">
         Редактировать
       </NuxtLink>
-      <button class="note-card__delete" type="button" @click="emit('delete', note)">
+      <button class="note-card__delete" type="button" @click="requestDelete">
         Удалить
       </button>
     </div>

@@ -1,4 +1,4 @@
-import type { NoteInput } from './noteInput'
+import type { NoteInput } from './noteInput';
 
 export interface Draft {
   sessionId: string

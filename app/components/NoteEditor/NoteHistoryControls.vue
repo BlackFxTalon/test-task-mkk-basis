@@ -3,12 +3,20 @@ defineProps<{
   canUndo: boolean
   canRedo: boolean
   message: string | null
-}>()
+}>();
 
 const emit = defineEmits<{
   undo: []
   redo: []
-}>()
+}>();
+
+const undo = (): void => {
+  emit('undo');
+};
+
+const redo = (): void => {
+  emit('redo');
+};
 </script>
 
 <template>
@@ -17,7 +25,7 @@ const emit = defineEmits<{
       class="button button--secondary"
       type="button"
       :disabled="!canUndo"
-      @click="emit('undo')"
+      @click="undo"
     >
       Отменить изменение
     </button>
@@ -25,7 +33,7 @@ const emit = defineEmits<{
       class="button button--secondary"
       type="button"
       :disabled="!canRedo"
-      @click="emit('redo')"
+      @click="redo"
     >
       Повторить изменение
     </button>

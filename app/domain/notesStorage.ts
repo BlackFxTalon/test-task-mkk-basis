@@ -1,4 +1,4 @@
-import type { Note, TodoItem } from './note'
+import type { Note, TodoItem } from './note';
 
 export interface NotesEnvelopeV1 {
   schemaVersion: 1
@@ -11,31 +11,31 @@ export interface NotesEnvelopeV2 {
 }
 
 export type NotesEnvelope = NotesEnvelopeV2
-export const CURRENT_NOTES_SCHEMA_VERSION = 2
+export const CURRENT_NOTES_SCHEMA_VERSION = 2;
 
 export type NotesStorageFailure = 'corrupted' | 'future-version' | 'blocked'
 
 export class NotesStorageError extends Error {
-  readonly failure: NotesStorageFailure
+  readonly failure: NotesStorageFailure;
 
   constructor(failure: NotesStorageFailure) {
     const reason = failure === 'future-version'
       ? 'Notes storage was written by a newer application version.'
       : failure === 'blocked'
         ? 'Browser storage is not accessible.'
-        : 'Notes storage data is corrupted.'
-    super(reason)
-    this.name = 'NotesStorageError'
-    this.failure = failure
+        : 'Notes storage data is corrupted.';
+    super(reason);
+    this.name = 'NotesStorageError';
+    this.failure = failure;
   }
 }
 
 const isNoteLike = (value: unknown): value is Note => {
   if (!value || typeof value !== 'object') {
-    return false
+    return false;
   }
 
-  const candidate = value as Partial<Note>
+  const candidate = value as Partial<Note>;
   return typeof candidate.id === 'string'
     && typeof candidate.title === 'string'
     && Array.isArray(candidate.items)
@@ -44,60 +44,60 @@ const isNoteLike = (value: unknown): value is Note => {
     && typeof candidate.updatedAt === 'string'
     && typeof candidate.revision === 'number'
     && Number.isInteger(candidate.revision)
-    && candidate.revision >= 1
-}
+    && candidate.revision >= 1;
+};
 
 const isTodoItemLike = (value: unknown): value is TodoItem => {
   if (!value || typeof value !== 'object') {
-    return false
+    return false;
   }
 
-  const candidate = value as Partial<TodoItem>
-  return typeof candidate.id === 'string' && typeof candidate.text === 'string'
-}
+  const candidate = value as Partial<TodoItem>;
+  return typeof candidate.id === 'string' && typeof candidate.text === 'string';
+};
 
 const isNotesArrayV2 = (value: unknown): value is Note[] =>
-  Array.isArray(value) && value.every(isNoteLike)
+  Array.isArray(value) && value.every(isNoteLike);
 
 export const readNotesEnvelope = (serialized: string | null): NotesEnvelopeV2 => {
   if (serialized === null) {
-    return { schemaVersion: CURRENT_NOTES_SCHEMA_VERSION, notes: [] }
+    return { schemaVersion: CURRENT_NOTES_SCHEMA_VERSION, notes: [] };
   }
 
-  let parsed: unknown
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(serialized)
+    parsed = JSON.parse(serialized);
   }
   catch {
-    throw new NotesStorageError('corrupted')
+    throw new NotesStorageError('corrupted');
   }
 
-  return migrateNotesEnvelope(parsed)
-}
+  return migrateNotesEnvelope(parsed);
+};
 
 export const migrateNotesEnvelope = (raw: unknown): NotesEnvelopeV2 => {
   if (!raw || typeof raw !== 'object') {
-    throw new NotesStorageError('corrupted')
+    throw new NotesStorageError('corrupted');
   }
 
-  const candidate = raw as { schemaVersion?: unknown }
+  const candidate = raw as { schemaVersion?: unknown };
   if (typeof candidate.schemaVersion !== 'number' || !Number.isInteger(candidate.schemaVersion) || candidate.schemaVersion < 1) {
-    throw new NotesStorageError('corrupted')
+    throw new NotesStorageError('corrupted');
   }
   if (candidate.schemaVersion > CURRENT_NOTES_SCHEMA_VERSION) {
-    throw new NotesStorageError('future-version')
+    throw new NotesStorageError('future-version');
   }
 
   if (candidate.schemaVersion === 1) {
-    return validateNotesEnvelopeV2(migrateNotesV1ToV2(raw as NotesEnvelopeV1))
+    return validateNotesEnvelopeV2(migrateNotesV1ToV2(raw as NotesEnvelopeV1));
   }
 
-  return validateNotesEnvelopeV2(raw)
-}
+  return validateNotesEnvelopeV2(raw);
+};
 
 const migrateNotesV1ToV2 = (envelope: NotesEnvelopeV1): NotesEnvelopeV2 => {
   if (!Array.isArray(envelope.notes)) {
-    throw new NotesStorageError('corrupted')
+    throw new NotesStorageError('corrupted');
   }
 
   return {
@@ -113,20 +113,20 @@ const migrateNotesV1ToV2 = (envelope: NotesEnvelopeV1): NotesEnvelopeV2 => {
           }))
         : [],
     })),
-  }
-}
+  };
+};
 
 const validateNotesEnvelopeV2 = (raw: unknown): NotesEnvelopeV2 => {
-  const candidate = raw as { notes?: unknown }
+  const candidate = raw as { notes?: unknown };
   if (!isNotesArrayV2(candidate.notes)) {
-    throw new NotesStorageError('corrupted')
+    throw new NotesStorageError('corrupted');
   }
 
-  return { schemaVersion: 2, notes: structuredClone(candidate.notes) }
-}
+  return { schemaVersion: 2, notes: structuredClone(candidate.notes) };
+};
 
 export const serializeNotesEnvelope = (notes: Note[]): string =>
   JSON.stringify({
     schemaVersion: CURRENT_NOTES_SCHEMA_VERSION,
     notes,
-  } satisfies NotesEnvelope)
+  } satisfies NotesEnvelope);

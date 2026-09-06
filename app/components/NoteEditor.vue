@@ -4,82 +4,82 @@ import {
   NOTE_TITLE_MAX_LENGTH,
   type Note,
   type TodoItem,
-} from '../domain/note'
-import { useNoteEditorStore } from '../stores/noteEditor'
-import { useNotesStore } from '../stores/notes'
-import type { EditorDialogKind } from './NoteEditor/EditorDialogs.vue'
+} from '../domain/note';
+import { useNoteEditorStore } from '../stores/noteEditor';
+import { useNotesStore } from '../stores/notes';
+import type { EditorDialogKind } from './NoteEditor/EditorDialogs.vue';
 
 const props = defineProps<{
   noteId?: string
-}>()
+}>();
 
-const notesStore = useNotesStore()
-const editorStore = useNoteEditorStore()
-const route = useRoute()
-const { claimRequestedSession, ownSession } = useEditingSessionOwnership()
-const { announce } = useOperationStatus()
+const notesStore = useNotesStore();
+const editorStore = useNoteEditorStore();
+const route = useRoute();
+const { claimRequestedSession, ownSession } = useEditingSessionOwnership();
+const { announce } = useOperationStatus();
 const {
   deletionDescription,
   requestDeletion,
   cancelDeletion,
   confirmDeletion,
-} = useNoteDeletion()
+} = useNoteDeletion();
 
 const { permitNavigation } = useUnsavedChangesGuard({
   isDirty: () => editorStore.isDirty,
   persistDraft: () => editorStore.persistDraft(),
   onBlockedNavigation: (target) => {
-    pendingNavigation.value = target
-    activeDialog.value = 'navigation'
+    pendingNavigation.value = target;
+    activeDialog.value = 'navigation';
   },
-})
+});
 
-const isReady = ref(false)
-const isSaving = ref(false)
-const isNotFound = ref(false)
-const titleError = ref<string | null>(null)
-const formError = ref<string | null>(null)
-const activeDialog = ref<EditorDialogKind | null>(null)
-const pendingNavigation = ref<string | null>(null)
+const isReady = ref(false);
+const isSaving = ref(false);
+const isNotFound = ref(false);
+const titleError = ref<string | null>(null);
+const formError = ref<string | null>(null);
+const activeDialog = ref<EditorDialogKind | null>(null);
+const pendingNavigation = ref<string | null>(null);
 
-let disposed = false
+let disposed = false;
 
-const isEditing = computed(() => props.noteId !== undefined)
-const pageTitle = computed(() => isEditing.value ? 'Редактирование заметки' : 'Новая заметка')
+const isEditing = computed(() => props.noteId !== undefined);
+const pageTitle = computed(() => isEditing.value ? 'Редактирование заметки' : 'Новая заметка');
 const title = computed({
   get: () => editorStore.session?.title ?? '',
   set: value => editorStore.setTitle(value),
-})
-const items = computed(() => editorStore.session?.items ?? [])
+});
+const items = computed(() => editorStore.session?.items ?? []);
 const isSaveDisabled = computed(() =>
   isSaving.value
   || (isEditing.value && !editorStore.isDirty),
-)
+);
 
 const dialogDescription = computed(() => {
   if (activeDialog.value === 'delete') {
-    return deletionDescription.value
+    return deletionDescription.value;
   }
   if (activeDialog.value === 'recovery') {
-    return 'Для этой вкладки найдены несохранённые изменения. Их можно восстановить или удалить.'
+    return 'Для этой вкладки найдены несохранённые изменения. Их можно восстановить или удалить.';
   }
   if (activeDialog.value === 'conflict') {
-    return 'Пока вы редактировали заметку, её сохранили в другой вкладке. Выберите, как поступить с вашими изменениями.'
+    return 'Пока вы редактировали заметку, её сохранили в другой вкладке. Выберите, как поступить с вашими изменениями.';
   }
   if (activeDialog.value === 'deleted') {
-    return 'Заметку удалили, пока вы её редактировали. Ваша работа осталась в этом редакторе: сохраните её как новую заметку или выйдите без сохранения.'
+    return 'Заметку удалили, пока вы её редактировали. Ваша работа осталась в этом редакторе: сохраните её как новую заметку или выйдите без сохранения.';
   }
   if (activeDialog.value === 'deleted-recovery') {
-    return 'Эта заметка больше не существует, но для вкладки найден её несохранённый черновик. Его можно восстановить как новую заметку или удалить.'
+    return 'Эта заметка больше не существует, но для вкладки найден её несохранённый черновик. Его можно восстановить как новую заметку или удалить.';
   }
-  return 'Несохранённые изменения будут потеряны.'
-})
+  return 'Несохранённые изменения будут потеряны.';
+});
 
 const sessionIdFromRoute = (): string | undefined => {
-  const value = route.query.session
-  const sessionId = Array.isArray(value) ? value[0] : value
-  return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : undefined
-}
+  const value = route.query.session;
+  const sessionId = Array.isArray(value) ? value[0] : value;
+  return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : undefined;
+};
 
 const startOwnedSession = async (
   input: {
@@ -90,9 +90,9 @@ const startOwnedSession = async (
   },
   requestedSessionId: string | undefined,
 ): Promise<string | null> => {
-  const claimedSessionId = await claimRequestedSession(requestedSessionId)
+  const claimedSessionId = await claimRequestedSession(requestedSessionId);
   if (disposed) {
-    return null
+    return null;
   }
 
   const sessionId = editorStore.startSession({
@@ -101,29 +101,29 @@ const startOwnedSession = async (
     baselineRevision: input.baselineRevision,
     title: input.title,
     items: input.items,
-  })
-  ownSession(sessionId)
-  return sessionId
-}
+  });
+  ownSession(sessionId);
+  return sessionId;
+};
 
 const initializeEditor = async (): Promise<void> => {
   if (!notesStore.isInitialized) {
-    notesStore.initialize()
+    notesStore.initialize();
   }
 
-  const requestedSessionId = sessionIdFromRoute()
-  let sessionId: string | null = null
+  const requestedSessionId = sessionIdFromRoute();
+  let sessionId: string | null = null;
 
   if (props.noteId !== undefined && !notesStore.error) {
-    const note = notesStore.getNote(props.noteId)
+    const note = notesStore.getNote(props.noteId);
     if (!note) {
-      const orphanedDraft = editorStore.offerDraftForDeletedNote(props.noteId, requestedSessionId ?? null)
+      const orphanedDraft = editorStore.offerDraftForDeletedNote(props.noteId, requestedSessionId ?? null);
       if (orphanedDraft) {
-        sessionId = orphanedDraft.sessionId
-        activeDialog.value = 'deleted-recovery'
+        sessionId = orphanedDraft.sessionId;
+        activeDialog.value = 'deleted-recovery';
       }
       else {
-        isNotFound.value = true
+        isNotFound.value = true;
       }
     }
     else {
@@ -132,7 +132,7 @@ const initializeEditor = async (): Promise<void> => {
         baselineRevision: note.revision,
         title: note.title,
         items: note.items,
-      }, requestedSessionId)
+      }, requestedSessionId);
     }
   }
   else if (props.noteId === undefined && !notesStore.error) {
@@ -140,307 +140,307 @@ const initializeEditor = async (): Promise<void> => {
       noteId: null,
       title: '',
       items: [],
-    }, requestedSessionId)
+    }, requestedSessionId);
   }
 
   if (sessionId && sessionId !== requestedSessionId) {
     await navigateTo({
       path: route.path,
       query: { ...route.query, session: sessionId },
-    }, { replace: true })
+    }, { replace: true });
   }
 
   if (editorStore.recoveryDraft && activeDialog.value === null) {
-    activeDialog.value = 'recovery'
+    activeDialog.value = 'recovery';
   }
-  isReady.value = true
-}
+  isReady.value = true;
+};
 
 onMounted(() => {
-  void initializeEditor()
-})
+  void initializeEditor();
+});
 
 const addItem = (): void => {
   editorStore.addItem({
     id: crypto.randomUUID(),
     text: '',
     completed: false,
-  })
-}
+  });
+};
 
 const removeItem = (index: number): void => {
-  editorStore.removeItem(index)
-  formError.value = null
-}
+  editorStore.removeItem(index);
+  formError.value = null;
+};
 
 const updateItemText = (index: number, value: string): void => {
-  editorStore.setItemText(index, value)
-  formError.value = null
-}
+  editorStore.setItemText(index, value);
+  formError.value = null;
+};
 
 const updateItemCompleted = (index: number, completed: boolean): void => {
-  editorStore.setItemCompleted(index, completed)
-  formError.value = null
-}
+  editorStore.setItemCompleted(index, completed);
+  formError.value = null;
+};
 
 const clearErrors = (): void => {
-  titleError.value = null
-  formError.value = null
-}
+  titleError.value = null;
+  formError.value = null;
+};
 
-const titleField = useTemplateRef<{ focus: () => void }>('titleField')
+const titleField = useTemplateRef<{ focus: () => void }>('titleField');
 
 const focusInvalidTitle = async (): Promise<void> => {
-  await nextTick()
-  titleField.value?.focus()
-}
+  await nextTick();
+  titleField.value?.focus();
+};
 
 type SaveFailureReason = 'title-required' | 'title-too-long' | 'item-too-long' | 'persistence'
 
 const handleSaveValidationFailure = async (reason: SaveFailureReason): Promise<void> => {
   if (reason === 'title-required') {
-    titleError.value = 'Введите название заметки.'
-    await focusInvalidTitle()
+    titleError.value = 'Введите название заметки.';
+    await focusInvalidTitle();
   }
   else if (reason === 'title-too-long') {
-    titleError.value = `Название не должно быть длиннее ${NOTE_TITLE_MAX_LENGTH} символов.`
-    await focusInvalidTitle()
+    titleError.value = `Название не должно быть длиннее ${NOTE_TITLE_MAX_LENGTH} символов.`;
+    await focusInvalidTitle();
   }
   else if (reason === 'item-too-long') {
-    formError.value = `Текст пункта не должен быть длиннее ${NOTE_ITEM_MAX_LENGTH} символов.`
+    formError.value = `Текст пункта не должен быть длиннее ${NOTE_ITEM_MAX_LENGTH} символов.`;
   }
   else {
-    formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.'
+    formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.';
   }
-}
+};
 
 const saveNote = async (): Promise<void> => {
-  isSaving.value = true
-  clearErrors()
-  editorStore.commitText()
+  isSaving.value = true;
+  clearErrors();
+  editorStore.commitText();
 
-  const sessionNoteId = editorStore.session?.noteId ?? null
-  const baselineRevision = editorStore.session?.baselineRevision ?? undefined
+  const sessionNoteId = editorStore.session?.noteId ?? null;
+  const baselineRevision = editorStore.session?.baselineRevision ?? undefined;
   const result = sessionNoteId === null
     ? notesStore.createNote(editorStore.getInput())
-    : notesStore.updateNote(sessionNoteId, editorStore.getInput(), { baselineRevision })
+    : notesStore.updateNote(sessionNoteId, editorStore.getInput(), { baselineRevision });
 
   if (!result.ok && result.reason !== 'unchanged') {
-    isSaving.value = false
+    isSaving.value = false;
 
     if (result.reason === 'not-found') {
-      activeDialog.value = 'deleted'
+      activeDialog.value = 'deleted';
     }
     else if (result.reason === 'revision-conflict') {
-      activeDialog.value = 'conflict'
+      activeDialog.value = 'conflict';
     }
     else {
-      await handleSaveValidationFailure(result.reason)
+      await handleSaveValidationFailure(result.reason);
     }
 
-    return
+    return;
   }
 
   if (!editorStore.finishSession()) {
-    isSaving.value = false
-    return
+    isSaving.value = false;
+    return;
   }
 
   if (result.ok) {
-    announce(sessionNoteId === null ? 'Заметка создана.' : 'Изменения сохранены.')
+    announce(sessionNoteId === null ? 'Заметка создана.' : 'Изменения сохранены.');
   }
-  permitNavigation()
-  await navigateTo('/')
-}
+  permitNavigation();
+  await navigateTo('/');
+};
 
 const performSaveAsNew = async (): Promise<void> => {
-  editorStore.commitText()
-  const result = notesStore.createNote(editorStore.getInput())
+  editorStore.commitText();
+  const result = notesStore.createNote(editorStore.getInput());
 
   if (!result.ok) {
-    isSaving.value = false
-    activeDialog.value = null
-    await handleSaveValidationFailure(result.reason)
-    return
+    isSaving.value = false;
+    activeDialog.value = null;
+    await handleSaveValidationFailure(result.reason);
+    return;
   }
 
   if (!editorStore.finishSession()) {
-    activeDialog.value = null
-    return
+    activeDialog.value = null;
+    return;
   }
 
-  announce('Заметка создана.')
-  permitNavigation()
-  activeDialog.value = null
-  await navigateTo('/')
-}
+  announce('Заметка создана.');
+  permitNavigation();
+  activeDialog.value = null;
+  await navigateTo('/');
+};
 
 const requestCancel = (): void => {
-  editorStore.commitText()
-  activeDialog.value = 'cancel'
-}
+  editorStore.commitText();
+  activeDialog.value = 'cancel';
+};
 
 const requestDelete = (): void => {
-  editorStore.commitText()
-  const note = props.noteId === undefined ? null : notesStore.getNote(props.noteId)
+  editorStore.commitText();
+  const note = props.noteId === undefined ? null : notesStore.getNote(props.noteId);
   if (!note) {
-    isNotFound.value = true
-    return
+    isNotFound.value = true;
+    return;
   }
 
-  requestDeletion(note)
-  activeDialog.value = 'delete'
-}
+  requestDeletion(note);
+  activeDialog.value = 'delete';
+};
 
 const closeDialog = (): void => {
   if (activeDialog.value === 'delete') {
-    cancelDeletion()
+    cancelDeletion();
   }
   else if (activeDialog.value === 'deleted-recovery') {
     if (!editorStore.discardRecoveryDraft()) {
-      return
+      return;
     }
-    activeDialog.value = null
-    pendingNavigation.value = null
-    isNotFound.value = true
-    return
+    activeDialog.value = null;
+    pendingNavigation.value = null;
+    isNotFound.value = true;
+    return;
   }
   else if (activeDialog.value === 'recovery' && !editorStore.discardRecoveryDraft()) {
-    return
+    return;
   }
-  activeDialog.value = null
-  pendingNavigation.value = null
-}
+  activeDialog.value = null;
+  pendingNavigation.value = null;
+};
 
 const exitEditor = async (target: string): Promise<void> => {
   if (!editorStore.cancelSession()) {
-    return
+    return;
   }
-  permitNavigation()
-  activeDialog.value = null
-  pendingNavigation.value = null
-  await navigateTo(target)
-}
+  permitNavigation();
+  activeDialog.value = null;
+  pendingNavigation.value = null;
+  await navigateTo(target);
+};
 
 const confirmDialog = async (): Promise<void> => {
   if (activeDialog.value === 'recovery') {
-    editorStore.restoreRecoveryDraft()
-    activeDialog.value = null
-    return
+    editorStore.restoreRecoveryDraft();
+    activeDialog.value = null;
+    return;
   }
 
   if (activeDialog.value === 'deleted-recovery') {
     if (editorStore.restoreOrphanedDraftAsNew()) {
-      activeDialog.value = null
-      announce('Черновик восстановлен. Сохраните его как новую заметку.')
+      activeDialog.value = null;
+      announce('Черновик восстановлен. Сохраните его как новую заметку.');
     }
-    return
+    return;
   }
 
   if (activeDialog.value === 'deleted') {
-    await exitEditor('/')
-    return
+    await exitEditor('/');
+    return;
   }
 
   if (activeDialog.value === 'delete' && props.noteId !== undefined) {
-    const result = confirmDeletion()
+    const result = confirmDeletion();
     if (!result?.ok) {
-      activeDialog.value = null
+      activeDialog.value = null;
       if (result?.reason === 'not-found') {
-        isNotFound.value = true
+        isNotFound.value = true;
       }
-      return
+      return;
     }
 
-    await exitEditor('/')
-    return
+    await exitEditor('/');
+    return;
   }
 
   const target = activeDialog.value === 'navigation'
     ? pendingNavigation.value ?? '/'
-    : '/'
-  await exitEditor(target)
-}
+    : '/';
+  await exitEditor(target);
+};
 
 const latestExternalNote = (): Note | null =>
-  props.noteId === undefined ? null : notesStore.getNote(props.noteId)
+  props.noteId === undefined ? null : notesStore.getNote(props.noteId);
 
 const conflictReloadLatest = (): void => {
-  const note = latestExternalNote()
+  const note = latestExternalNote();
   if (note && editorStore.resolveConflictReload(note)) {
-    activeDialog.value = null
+    activeDialog.value = null;
   }
-}
+};
 
 const conflictSaveAsNew = async (): Promise<void> => {
-  await performSaveAsNew()
-}
+  await performSaveAsNew();
+};
 
 const conflictOverwrite = (): void => {
-  const note = latestExternalNote()
+  const note = latestExternalNote();
   if (!note || props.noteId === undefined) {
-    return
+    return;
   }
 
-  const result = notesStore.updateNote(props.noteId, editorStore.getInput(), { force: true })
+  const result = notesStore.updateNote(props.noteId, editorStore.getInput(), { force: true });
   if (!result.ok) {
     if (result.reason === 'not-found') {
-      activeDialog.value = null
-      isNotFound.value = true
+      activeDialog.value = null;
+      isNotFound.value = true;
     }
     else if (result.reason === 'persistence') {
-      activeDialog.value = null
-      formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.'
+      activeDialog.value = null;
+      formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.';
     }
     else if (result.reason === 'unchanged') {
       // Local content already equals the external revision: nothing to overwrite.
       if (!editorStore.finishSession()) {
-        activeDialog.value = null
-        return
+        activeDialog.value = null;
+        return;
       }
-      announce('Изменения сохранены.')
-      permitNavigation()
-      activeDialog.value = null
-      void navigateTo('/')
+      announce('Изменения сохранены.');
+      permitNavigation();
+      activeDialog.value = null;
+      void navigateTo('/');
     }
-    return
+    return;
   }
 
   if (!editorStore.finishSession()) {
-    activeDialog.value = null
-    return
+    activeDialog.value = null;
+    return;
   }
 
-  announce('Изменения сохранены.')
-  permitNavigation()
-  activeDialog.value = null
-  void navigateTo('/')
-}
+  announce('Изменения сохранены.');
+  permitNavigation();
+  activeDialog.value = null;
+  void navigateTo('/');
+};
 
 const deletedExitWithoutSaving = async (): Promise<void> => {
-  await exitEditor('/')
-}
+  await exitEditor('/');
+};
 
-const { historyMessage, undo, redo } = useNoteHistoryControls(editorStore)
+const { historyMessage, undo, redo } = useNoteHistoryControls(editorStore);
 
 useCrossTabNoteSync({
   noteId: () => props.noteId,
   isReady: () => isReady.value,
   onNoteDeleted: (hasLocalChanges) => {
     if (hasLocalChanges) {
-      activeDialog.value = 'deleted'
+      activeDialog.value = 'deleted';
     }
     else {
-      isNotFound.value = true
-      editorStore.closeSession()
+      isNotFound.value = true;
+      editorStore.closeSession();
     }
   },
-})
+});
 
 onBeforeUnmount(() => {
-  disposed = true
-  editorStore.closeSession()
-})
+  disposed = true;
+  editorStore.closeSession();
+});
 </script>
 
 <template>

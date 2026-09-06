@@ -1,24 +1,32 @@
 <script setup lang="ts">
-import { NOTE_TITLE_MAX_LENGTH } from '../../domain/note'
+import { NOTE_TITLE_MAX_LENGTH } from '../../domain/note';
 
-const title = defineModel<string>({ required: true })
+const title = defineModel<string>({ required: true });
 
 defineProps<{
   error: string | null
-}>()
+}>();
 
 const emit = defineEmits<{
   commit: []
   clearError: []
-}>()
+}>();
 
-const titleInput = useTemplateRef<HTMLInputElement>('titleInput')
+const clearError = (): void => {
+  emit('clearError');
+};
+
+const commitTitle = (): void => {
+  emit('commit');
+};
+
+const titleInput = useTemplateRef<HTMLInputElement>('titleInput');
 
 defineExpose({
   focus: (): void => {
-    titleInput.value?.focus()
+    titleInput.value?.focus();
   },
-})
+});
 </script>
 
 <template>
@@ -36,8 +44,8 @@ defineExpose({
       :maxlength="NOTE_TITLE_MAX_LENGTH"
       autocomplete="off"
       :class="{ 'field__input--invalid': Boolean(error) }"
-      @input="emit('clearError')"
-      @blur="emit('commit')"
+      @input="clearError"
+      @blur="commitTitle"
     >
     <p id="note-title-help" class="field__help">
       Обязательное поле, до {{ NOTE_TITLE_MAX_LENGTH }} символов.

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { NOTE_ITEM_MAX_LENGTH, type TodoItem } from '../../domain/note'
+import { NOTE_ITEM_MAX_LENGTH, type TodoItem } from '../../domain/note';
 
 defineProps<{
   items: TodoItem[]
-}>()
+}>();
 
 const emit = defineEmits<{
   add: []
@@ -12,7 +12,27 @@ const emit = defineEmits<{
   updateCompleted: [index: number, completed: boolean]
   commitText: []
   clearErrors: []
-}>()
+}>();
+
+const addItem = (): void => {
+  emit('add');
+};
+
+const removeItem = (index: number): void => {
+  emit('remove', index);
+};
+
+const updateText = (index: number, event: Event): void => {
+  emit('updateText', index, (event.target as HTMLInputElement).value);
+};
+
+const updateCompleted = (index: number, event: Event): void => {
+  emit('updateCompleted', index, (event.target as HTMLInputElement).checked);
+};
+
+const commitText = (): void => {
+  emit('commitText');
+};
 </script>
 
 <template>
@@ -26,11 +46,10 @@ const emit = defineEmits<{
     <ol v-else class="items-editor__list">
       <li v-for="(item, index) in items" :key="item.id" class="item-row">
         <label class="item-row__checkbox">
-          <span class="visually-hidden">Выполнено</span>
           <input
             type="checkbox"
             :checked="item.completed"
-            @change="emit('updateCompleted', index, ($event.target as HTMLInputElement).checked)"
+            @change="updateCompleted(index, $event)"
           >
         </label>
         <div class="item-row__field">
@@ -40,8 +59,8 @@ const emit = defineEmits<{
             type="text"
             :value="item.text"
             :maxlength="NOTE_ITEM_MAX_LENGTH"
-            @input="emit('updateText', index, ($event.target as HTMLInputElement).value)"
-            @blur="emit('commitText')"
+            @input="updateText(index, $event)"
+            @blur="commitText"
           >
           <span :id="`note-item-count-${item.id}`" class="item-row__count">
             {{ item.text.length }} / {{ NOTE_ITEM_MAX_LENGTH }}
@@ -50,14 +69,14 @@ const emit = defineEmits<{
         <button
           class="item-row__remove"
           type="button"
-          @click="emit('remove', index)"
+          @click="removeItem(index)"
         >
           Удалить
         </button>
       </li>
     </ol>
 
-    <button class="button button--secondary" type="button" @click="emit('add')">
+    <button class="button button--secondary" type="button" @click="addItem">
       Добавить пункт
     </button>
   </fieldset>

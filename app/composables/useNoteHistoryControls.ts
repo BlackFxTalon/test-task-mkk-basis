@@ -1,4 +1,4 @@
-import type { HistoryOperationType, HistoryResult } from '../domain/noteHistory'
+import type { HistoryOperationType, HistoryResult } from '../domain/noteHistory';
 
 const historyOperationLabels: Record<HistoryOperationType, string> = {
   title: 'Изменение заголовка',
@@ -6,10 +6,10 @@ const historyOperationLabels: Record<HistoryOperationType, string> = {
   'item-completed': 'Изменение отметки пункта',
   'item-inserted': 'Добавление пункта',
   'item-removed': 'Удаление пункта',
-}
+};
 
 const formatHistoryMessage = (result: HistoryResult): string =>
-  `${historyOperationLabels[result.operation]} ${result.action === 'undo' ? 'отменено' : 'повторено'}.`
+  `${historyOperationLabels[result.operation]} ${result.action === 'undo' ? 'отменено' : 'повторено'}.`;
 
 const isTextEditingTarget = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement
@@ -23,71 +23,71 @@ const isTextEditingTarget = (target: EventTarget | null): boolean =>
     'input[type="url"]',
     'input[type="tel"]',
     'input[type="password"]',
-  ].join(', '))
+  ].join(', '));
 
 export const useNoteHistoryControls = (editorStore: ReturnType<typeof useNoteEditorStore>) => {
-  const historyMessage = ref<string | null>(null)
-  let historyMessageTimeout: NodeJS.Timeout | null = null
+  const historyMessage = ref<string | null>(null);
+  let historyMessageTimeout: NodeJS.Timeout | null = null;
 
   const showHistoryMessage = (message: string): void => {
-    historyMessage.value = message
+    historyMessage.value = message;
     if (historyMessageTimeout !== null) {
-      clearTimeout(historyMessageTimeout)
+      clearTimeout(historyMessageTimeout);
     }
     historyMessageTimeout = setTimeout(() => {
-      historyMessage.value = null
-      historyMessageTimeout = null
-    }, 3000)
-  }
+      historyMessage.value = null;
+      historyMessageTimeout = null;
+    }, 3000);
+  };
 
   const undo = (): void => {
-    const result = editorStore.undo()
+    const result = editorStore.undo();
     if (result) {
-      showHistoryMessage(formatHistoryMessage(result))
+      showHistoryMessage(formatHistoryMessage(result));
     }
-  }
+  };
 
   const redo = (): void => {
-    const result = editorStore.redo()
+    const result = editorStore.redo();
     if (result) {
-      showHistoryMessage(formatHistoryMessage(result))
+      showHistoryMessage(formatHistoryMessage(result));
     }
-  }
+  };
 
   const handleHistoryShortcut = (event: KeyboardEvent): void => {
     if ((!event.ctrlKey && !event.metaKey) || event.altKey || isTextEditingTarget(event.target)) {
-      return
+      return;
     }
 
-    const key = event.key.toLowerCase()
+    const key = event.key.toLowerCase();
     if (key === 'z' && event.shiftKey) {
-      event.preventDefault()
-      redo()
+      event.preventDefault();
+      redo();
     }
     else if (key === 'z') {
-      event.preventDefault()
-      undo()
+      event.preventDefault();
+      undo();
     }
     else if (key === 'y') {
-      event.preventDefault()
-      redo()
+      event.preventDefault();
+      redo();
     }
-  }
+  };
 
   onMounted(() => {
-    window.addEventListener('keydown', handleHistoryShortcut)
-  })
+    window.addEventListener('keydown', handleHistoryShortcut);
+  });
 
   onBeforeUnmount(() => {
-    window.removeEventListener('keydown', handleHistoryShortcut)
+    window.removeEventListener('keydown', handleHistoryShortcut);
     if (historyMessageTimeout !== null) {
-      clearTimeout(historyMessageTimeout)
+      clearTimeout(historyMessageTimeout);
     }
-  })
+  });
 
   return {
     historyMessage,
     undo,
     redo,
-  }
-}
+  };
+};

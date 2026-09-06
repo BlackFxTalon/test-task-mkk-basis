@@ -11,7 +11,7 @@ export type EditorDialogKind =
 defineProps<{
   kind: EditorDialogKind
   description: string
-}>()
+}>();
 
 const emit = defineEmits<{
   cancel: []
@@ -22,7 +22,7 @@ const emit = defineEmits<{
   saveAsNew: []
   overwriteExternal: []
   exitWithoutSaving: []
-}>()
+}>();
 
 const DIALOG_TEXT: Record<EditorDialogKind, {
   title: string
@@ -64,7 +64,31 @@ const DIALOG_TEXT: Record<EditorDialogKind, {
     confirmLabel: 'Восстановить как новую заметку',
     cancelLabel: 'Удалить черновик',
   },
-}
+};
+
+const requestCancel = (): void => {
+  emit('cancel');
+};
+
+const requestConfirm = (): void => {
+  emit('confirm');
+};
+
+const restoreLatest = (): void => {
+  emit('restoreLatest');
+};
+
+const saveAsNew = (): void => {
+  emit('saveAsNew');
+};
+
+const overwriteExternal = (): void => {
+  emit('overwriteExternal');
+};
+
+const exitWithoutSaving = (): void => {
+  emit('exitWithoutSaving');
+};
 </script>
 
 <template>
@@ -76,28 +100,28 @@ const DIALOG_TEXT: Record<EditorDialogKind, {
     :cancel-label="DIALOG_TEXT[kind].cancelLabel"
     :destructive="kind === 'delete'"
     :custom-actions="kind === 'conflict' || kind === 'deleted'"
-    @cancel="emit('cancel')"
-    @confirm="emit('confirm')"
+    @cancel="requestCancel"
+    @confirm="requestConfirm"
   >
     <template v-if="kind === 'conflict'" #actions>
-      <button class="button button--secondary" type="button" @click="emit('cancel')">
+      <button class="button button--secondary" type="button" @click="requestCancel">
         Продолжить редактирование
       </button>
-      <button class="button button--secondary" type="button" @click="emit('restoreLatest')">
+      <button class="button button--secondary" type="button" @click="restoreLatest">
         Загрузить актуальную версию
       </button>
-      <button class="button button--secondary" type="button" @click="emit('saveAsNew')">
+      <button class="button button--secondary" type="button" @click="saveAsNew">
         Сохранить как новую заметку
       </button>
-      <button class="button button--danger" type="button" @click="emit('overwriteExternal')">
+      <button class="button button--danger" type="button" @click="overwriteExternal">
         Перезаписать изменения другой вкладки
       </button>
     </template>
     <template v-else-if="kind === 'deleted'" #actions>
-      <button class="button button--secondary" type="button" @click="emit('saveAsNew')">
+      <button class="button button--secondary" type="button" @click="saveAsNew">
         Сохранить как новую заметку
       </button>
-      <button class="button button--danger" type="button" @click="emit('exitWithoutSaving')">
+      <button class="button button--danger" type="button" @click="exitWithoutSaving">
         Выйти без сохранения
       </button>
     </template>

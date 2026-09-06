@@ -1,11 +1,11 @@
-import type { Note, NotesRepository } from '../domain/note'
+import type { Note, NotesRepository } from '../domain/note';
 import {
   NotesStorageError,
   readNotesEnvelope,
   serializeNotesEnvelope,
-} from '../domain/notesStorage'
+} from '../domain/notesStorage';
 
-export const NOTES_STORAGE_KEY = 'basis-notes:notes'
+export const NOTES_STORAGE_KEY = 'basis-notes:notes';
 
 export interface NotesStoragePort {
   getItem(key: string): string | null
@@ -15,38 +15,38 @@ export interface NotesStoragePort {
 
 export const createBrowserNotesRepository = (storage: NotesStoragePort): NotesRepository => ({
   read(): Note[] {
-    let serialized: string | null
+    let serialized: string | null;
     try {
-      serialized = storage.getItem(NOTES_STORAGE_KEY)
+      serialized = storage.getItem(NOTES_STORAGE_KEY);
     }
     catch {
-      throw new NotesStorageError('blocked')
+      throw new NotesStorageError('blocked');
     }
 
-    const parsed = readNotesEnvelope(serialized)
-    const currentSerialized = serializeNotesEnvelope(parsed.notes)
+    const parsed = readNotesEnvelope(serialized);
+    const currentSerialized = serializeNotesEnvelope(parsed.notes);
     if (serialized !== null && serialized !== currentSerialized) {
       try {
-        storage.setItem(NOTES_STORAGE_KEY, currentSerialized)
+        storage.setItem(NOTES_STORAGE_KEY, currentSerialized);
       }
       catch {
         // Мигрированные данные уже работают в этой сессии; следующая успешная запись сохранит их.
       }
     }
-    return parsed.notes
+    return parsed.notes;
   },
 
   write(notes: Note[]): void {
-    storage.setItem(NOTES_STORAGE_KEY, serializeNotesEnvelope(notes))
+    storage.setItem(NOTES_STORAGE_KEY, serializeNotesEnvelope(notes));
   },
 
   reset(): void {
-    storage.removeItem(NOTES_STORAGE_KEY)
+    storage.removeItem(NOTES_STORAGE_KEY);
   },
-})
+});
 
 export const browserNotesRepository: NotesRepository = createBrowserNotesRepository({
   getItem: key => window.localStorage.getItem(key),
   setItem: (key, value) => window.localStorage.setItem(key, value),
   removeItem: key => window.localStorage.removeItem(key),
-})
+});

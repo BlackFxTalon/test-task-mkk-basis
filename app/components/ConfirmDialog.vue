@@ -11,161 +11,191 @@ const props = withDefaults(defineProps<{
   cancelLabel: 'Отмена',
   destructive: false,
   customActions: false,
-})
+});
 
 const emit = defineEmits<{
   cancel: []
   confirm: []
-}>()
+}>();
 
-const dialog = useTemplateRef<HTMLDialogElement>('dialog')
-const cancelButton = useTemplateRef<HTMLButtonElement>('cancelButton')
-let triggerElement: HTMLElement | null = null
-let openedModally = false
-const fallbackInertElements = new Set<HTMLElement>()
+const dialog = useTemplateRef<HTMLDialogElement>('dialog');
+const cancelButton = useTemplateRef<HTMLButtonElement>('cancelButton');
+let triggerElement: HTMLElement | null = null;
+let openedModally = false;
+const fallbackInertElements = new Set<HTMLElement>();
+
+const CLOSE_ANIMATION_FALLBACK_MS = 240;
+let closeAnimationToken = 0;
+let closeAnimationTimer: number | undefined;
+const isClosing = ref(false);
 
 const initialFocusTarget = (): HTMLElement | null =>
   cancelButton.value
   ?? dialog.value?.querySelector<HTMLElement>('.confirm-dialog__actions button')
-  ?? null
+  ?? null;
 
 const containFallbackFocus = (event: FocusEvent): void => {
-  const element = dialog.value
+  const element = dialog.value;
   if (
     !openedModally
     && element?.open
     && event.target instanceof Node
     && !element.contains(event.target)
   ) {
-    initialFocusTarget()?.focus()
+    initialFocusTarget()?.focus();
   }
-}
+};
 
 const enableFallbackContainment = (element: HTMLDialogElement): void => {
   for (const sibling of Array.from(document.body.children)) {
     if (sibling instanceof HTMLElement && sibling !== element && !sibling.inert) {
-      sibling.inert = true
-      fallbackInertElements.add(sibling)
+      sibling.inert = true;
+      fallbackInertElements.add(sibling);
     }
   }
-  document.addEventListener('focusin', containFallbackFocus)
-}
+  document.addEventListener('focusin', containFallbackFocus);
+};
 
 const disableFallbackContainment = (): void => {
-  document.removeEventListener('focusin', containFallbackFocus)
+  document.removeEventListener('focusin', containFallbackFocus);
   for (const element of fallbackInertElements) {
-    element.inert = false
+    element.inert = false;
   }
-  fallbackInertElements.clear()
-}
+  fallbackInertElements.clear();
+};
 
 const restoreFocus = (): void => {
   if (triggerElement?.isConnected) {
-    triggerElement.focus()
+    triggerElement.focus();
   }
-  triggerElement = null
-}
+  triggerElement = null;
+};
 
-const closeDialog = (): void => {
-  const element = dialog.value
+const closeInstant = (): void => {
+  const element = dialog.value;
   if (!element) {
-    return
+    return;
   }
 
   if (element.open && openedModally) {
-    element.close()
+    element.close();
   }
   else {
-    element.removeAttribute('open')
+    element.removeAttribute('open');
   }
 
-  disableFallbackContainment()
-  openedModally = false
-  restoreFocus()
-}
+  disableFallbackContainment();
+  openedModally = false;
+  restoreFocus();
+};
+
+const closeDialog = (): void => {
+  const element = dialog.value;
+  if (!element || !element.open) {
+    closeInstant();
+    return;
+  }
+
+  const token = ++closeAnimationToken;
+  isClosing.value = true;
+  const finish = (): void => {
+    if (token !== closeAnimationToken) {
+      return;
+    }
+
+    window.clearTimeout(closeAnimationTimer);
+    isClosing.value = false;
+    closeInstant();
+  };
+
+  closeAnimationTimer = window.setTimeout(finish, CLOSE_ANIMATION_FALLBACK_MS);
+  element.addEventListener('animationend', finish, { once: true });
+};
 
 const openDialog = async (): Promise<void> => {
-  const element = dialog.value
+  const element = dialog.value;
   if (!element || element.open) {
-    return
+    return;
   }
 
+  closeAnimationToken += 1;
+  isClosing.value = false;
   triggerElement = document.activeElement instanceof HTMLElement
     ? document.activeElement
-    : null
+    : null;
 
   try {
-    element.showModal()
-    openedModally = true
+    element.showModal();
+    openedModally = true;
   }
   catch {
-    element.setAttribute('open', '')
-    openedModally = false
-    enableFallbackContainment(element)
+    element.setAttribute('open', '');
+    openedModally = false;
+    enableFallbackContainment(element);
   }
 
-  await nextTick()
-  initialFocusTarget()?.focus()
-}
+  await nextTick();
+  initialFocusTarget()?.focus();
+};
 
 watch(
   () => props.open,
   (isOpen) => {
     if (isOpen) {
-      void openDialog()
+      void openDialog();
     }
     else {
-      closeDialog()
+      closeDialog();
     }
   },
   { immediate: true, flush: 'post' },
-)
+);
 
 const requestCancel = (): void => {
-  emit('cancel')
-}
+  emit('cancel');
+};
 
 const requestConfirm = (): void => {
-  emit('confirm')
-}
+  emit('confirm');
+};
 
 const handleKeydown = (event: KeyboardEvent): void => {
-  const element = dialog.value
+  const element = dialog.value;
   if (!element) {
-    return
+    return;
   }
 
   if (event.key === 'Escape') {
-    event.preventDefault()
-    requestCancel()
-    return
+    event.preventDefault();
+    requestCancel();
+    return;
   }
 
   if (event.key !== 'Tab') {
-    return
+    return;
   }
 
   const focusable = Array.from(
     element.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])'),
-  )
+  );
   if (focusable.length === 0) {
-    event.preventDefault()
-    return
+    event.preventDefault();
+    return;
   }
 
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
   if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last?.focus()
+    event.preventDefault();
+    last?.focus();
   }
   else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first?.focus()
+    event.preventDefault();
+    first?.focus();
   }
-}
+};
 
-onBeforeUnmount(closeDialog)
+onBeforeUnmount(closeInstant);
 </script>
 
 <template>
@@ -173,6 +203,7 @@ onBeforeUnmount(closeDialog)
     <dialog
       ref="dialog"
       class="confirm-dialog"
+      :class="{ 'confirm-dialog--closing': isClosing }"
       @cancel.prevent="requestCancel"
       @keydown="handleKeydown"
     >
@@ -213,6 +244,14 @@ onBeforeUnmount(closeDialog)
   background: var(--color-surface);
   box-shadow: 0 #{to-rem(24px)} #{to-rem(80px)} rgb(0 0 0 / 35%);
 
+  &[open] {
+    animation: confirm-dialog-enter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &:modal[open] {
+    animation-name: confirm-dialog-enter-modal;
+  }
+
   &[open]:not(:modal) {
     position: fixed;
     inset-block-start: 50%;
@@ -225,6 +264,15 @@ onBeforeUnmount(closeDialog)
   &::backdrop {
     background: rgb(2 18 24 / 64%);
     backdrop-filter: blur(3px);
+    transition: opacity 160ms ease;
+  }
+
+  &.confirm-dialog--closing {
+    animation: confirm-dialog-exit 160ms ease forwards;
+  }
+
+  &:modal.confirm-dialog--closing {
+    animation-name: confirm-dialog-exit-modal;
   }
 
   &__content {
@@ -253,6 +301,40 @@ onBeforeUnmount(closeDialog)
     justify-content: flex-end;
     @include rem(gap, 12px);
     @include rem(margin-top, 8px);
+  }
+}
+
+@keyframes confirm-dialog-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes confirm-dialog-enter-modal {
+  from {
+    opacity: 0;
+    transform: translateY(#{to-rem(12px)}) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes confirm-dialog-exit {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes confirm-dialog-exit-modal {
+  to {
+    opacity: 0;
+    transform: translateY(#{to-rem(8px)}) scale(0.98);
   }
 }
 

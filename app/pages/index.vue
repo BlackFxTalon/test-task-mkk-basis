@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { storeToRefs } from 'pinia'
-import { NOTES_STORAGE_KEY } from '../repositories/browserNotesRepository'
-import { useNotesStore } from '../stores/notes'
+import { storeToRefs } from 'pinia';
+import { NOTES_STORAGE_KEY } from '../repositories/browserNotesRepository';
+import { useNotesStore } from '../stores/notes';
 
-useHead({ title: 'Заметки' })
+useHead({ title: 'Заметки' });
 
-const notesStore = useNotesStore()
-const { notes, isInitialized, error, storageBlocker } = storeToRefs(notesStore)
-const { message } = useOperationStatus()
+const notesStore = useNotesStore();
+const { notes, isInitialized, error, storageBlocker } = storeToRefs(notesStore);
+const { message } = useOperationStatus();
 const {
   notePendingDeletion,
   deletionDescription,
   requestDeletion,
   cancelDeletion,
   confirmDeletion,
-} = useNoteDeletion()
-const isResetPending = ref(false)
+} = useNoteDeletion();
+const isResetPending = ref(false);
 
 const blockerReason = computed(() =>
   storageBlocker.value?.kind === 'future-version'
@@ -23,42 +23,42 @@ const blockerReason = computed(() =>
     : storageBlocker.value?.kind === 'blocked'
       ? 'Браузер запретил доступ к хранилищу. Сброс возможен только после возврата доступа: разрешите сайту сохранять данные и обновите страницу.'
       : 'Сохранённые данные заметок не удалось прочитать. Сброс вернёт приложение в рабочее состояние, но удалит сохранённые заметки.',
-)
+);
 
 const requestReset = (): void => {
-  isResetPending.value = true
-}
+  isResetPending.value = true;
+};
 
 const cancelReset = (): void => {
-  isResetPending.value = false
-}
+  isResetPending.value = false;
+};
 
 const confirmReset = (): void => {
-  isResetPending.value = false
-  const result = notesStore.resetSavedNotes()
+  isResetPending.value = false;
+  const result = notesStore.resetSavedNotes();
 
   if (result.ok) {
-    message.value = 'Сохранённые данные заметок сброшены.'
+    message.value = 'Сохранённые данные заметок сброшены.';
   }
-}
+};
 
 const handleStorageChange = (event: StorageEvent): void => {
   // A null key means storage.clear() wiped everything in another tab.
   if (event.key !== NOTES_STORAGE_KEY && event.key !== null) {
-    return
+    return;
   }
 
-  notesStore.refresh()
-}
+  notesStore.refresh();
+};
 
 onMounted(() => {
-  notesStore.initialize()
-  window.addEventListener('storage', handleStorageChange)
-})
+  notesStore.initialize();
+  window.addEventListener('storage', handleStorageChange);
+});
 
 onBeforeUnmount(() => {
-  window.removeEventListener('storage', handleStorageChange)
-})
+  window.removeEventListener('storage', handleStorageChange);
+});
 </script>
 
 <template>
@@ -68,10 +68,6 @@ onBeforeUnmount(() => {
     </p>
 
     <header class="notes-page__header">
-      <div>
-        <p class="notes-page__eyebrow">Локально в браузере</p>
-        <h1 class="page-title">Ваши заметки</h1>
-      </div>
       <NuxtLink
         v-if="isInitialized && !error && notes.length > 0"
         class="button button--primary"
@@ -98,7 +94,6 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="isInitialized && !error && notes.length === 0" class="empty-state">
-      <span class="empty-state__icon">✦</span>
       <h2>Заметок пока нет</h2>
       <p>Создайте первую заметку, чтобы собрать важное в одном месте.</p>
       <NuxtLink class="button button--primary" to="/notes/new">
@@ -150,19 +145,6 @@ onBeforeUnmount(() => {
     @include rem(gap, 24px);
   }
 
-  &__eyebrow {
-    @include rem(margin, 0px, 0px, 9.6px);
-    color: var(--color-accent-strong);
-    font-weight: 800;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: clamp(#{to-rem(40px)}, 7vw, #{to-rem(72px)});
-    line-height: 1;
-    letter-spacing: -0.055em;
-  }
-
   &__state,
   &__error {
     margin: 0;
@@ -205,19 +187,8 @@ onBeforeUnmount(() => {
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
 
-  &__icon {
-    display: grid;
-    @include rem(width, 48px);
-    @include rem(height, 48px);
-    place-items: center;
-    border-radius: 50%;
-    color: var(--color-on-accent);
-    background: var(--color-accent);
-    @include rem(font-size, 22.4px);
-  }
-
   h2 {
-    @include rem(margin, 20px, 0px, 0px);
+    margin: 0;
     font-size: clamp(#{to-rem(25.6px)}, 4vw, #{to-rem(36px)});
   }
 
