@@ -22,7 +22,7 @@ const createMemoryDraftRepository = (initial: Draft[] = []) => {
   return { drafts, repository };
 };
 
-describe('note editor store', () => {
+describe('хранилище редактора заметок', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
@@ -31,7 +31,7 @@ describe('note editor store', () => {
     vi.useRealTimers();
   });
 
-  it('persists the active session draft after 700 ms of inactivity', () => {
+  it('сохраняет черновик активной сессии после 700 мс бездействия', () => {
     vi.useFakeTimers();
     const drafts = new Map<string, Draft>();
     const repository: DraftRepository = {
@@ -68,7 +68,7 @@ describe('note editor store', () => {
     });
   });
 
-  it('discards the active editing session and its unsaved changes', () => {
+  it('отменяет активную сессию редактирования и её несохранённые изменения', () => {
     const { repository } = createMemoryDraftRepository();
     const useStore = createNoteEditorStore({
       repository,
@@ -95,7 +95,7 @@ describe('note editor store', () => {
     expect(store.canRedo).toBe(false);
   });
 
-  it('allows a clean editing session to be cancelled explicitly', () => {
+  it('позволяет явно отменить сессию редактирования без изменений', () => {
     const { repository } = createMemoryDraftRepository();
     const useStore = createNoteEditorStore({
       repository,
@@ -112,7 +112,7 @@ describe('note editor store', () => {
     expect(store.session).toBeNull();
   });
 
-  it('uses normalized structural changes to determine dirty state', () => {
+  it('определяет наличие правок по нормализованным структурным изменениям', () => {
     const store = useNoteEditorStore();
     store.startSession({
       noteId: 'existing',
@@ -131,7 +131,7 @@ describe('note editor store', () => {
     expect(store.isDirty).toBe(true);
   });
 
-  it('exposes undo and redo through the editor store', () => {
+  it('даёт отмену и повтор через хранилище редактора', () => {
     const store = useNoteEditorStore();
     store.startSession({ noteId: null, title: '', items: [] });
 
@@ -150,7 +150,7 @@ describe('note editor store', () => {
     expect(store.session?.title).toBe('Новая заметка');
   });
 
-  it('offers only the exact session draft and restores it without history', () => {
+  it('предлагает только черновик своей сессии и восстанавливает его без истории', () => {
     const { repository } = createMemoryDraftRepository([
       {
         sessionId: 'session-1',
@@ -198,7 +198,7 @@ describe('note editor store', () => {
     expect(store.isDirty).toBe(true);
   });
 
-  it('does not offer a session draft for a different target note', () => {
+  it('не предлагает черновик сессии для другой целевой заметки', () => {
     const { repository } = createMemoryDraftRepository([{
       sessionId: 'session-1',
       targetNoteId: 'note-2',
@@ -225,7 +225,7 @@ describe('note editor store', () => {
     expect(store.getInput().title).toBe('Первая заметка');
   });
 
-  it('discards recovery and deletes the current session draft', () => {
+  it('отклоняет восстановление и удаляет черновик текущей сессии', () => {
     const { drafts, repository } = createMemoryDraftRepository([{
       sessionId: 'session-1',
       targetNoteId: null,
@@ -248,7 +248,7 @@ describe('note editor store', () => {
     expect(drafts.has('session-1')).toBe(false);
   });
 
-  it('keeps drafts for independent editing sessions separate', () => {
+  it('хранит черновики независимых сессий редактирования отдельно', () => {
     const { drafts, repository } = createMemoryDraftRepository();
     const useFirstStore = createNoteEditorStore({
       repository,
@@ -275,7 +275,7 @@ describe('note editor store', () => {
     expect(drafts.get('session-2')?.current.title).toBe('Вторая вкладка — черновик');
   });
 
-  it('cleans drafts older than 30 days while retaining recent drafts', () => {
+  it('удаляет черновики старше 30 дней, оставляя недавние', () => {
     const { drafts, repository } = createMemoryDraftRepository([
       {
         sessionId: 'expired',
@@ -304,10 +304,10 @@ describe('note editor store', () => {
     expect(drafts.has('recent')).toBe(true);
   });
 
-  it('keeps active edits in memory and exposes a draft write failure', () => {
+  it('оставляет правки в памяти и сообщает об ошибке записи черновика', () => {
     const repository: DraftRepository = {
       read: () => null,
-      write: () => { throw new Error('quota exceeded'); },
+      write: () => { throw new Error('квота превышена'); },
       delete: () => {},
       deleteOlderThan: () => {},
     };
@@ -326,7 +326,7 @@ describe('note editor store', () => {
     expect(store.draftError).toBe('Не удалось сохранить черновик. Изменения остаются открыты в этой вкладке.');
   });
 
-  it('deletes the current draft when a session finishes after save', () => {
+  it('удаляет текущий черновик при успешном завершении сессии', () => {
     const { drafts, repository } = createMemoryDraftRepository();
     const useStore = createNoteEditorStore({
       repository,
@@ -345,11 +345,11 @@ describe('note editor store', () => {
     expect(store.canUndo).toBe(false);
   });
 
-  it('does not close the session when draft deletion fails on finish', () => {
+  it('не закрывает сессию, если удаление черновика не удалось при завершении', () => {
     const repository: DraftRepository = {
       read: () => null,
       write: () => {},
-      delete: () => { throw new Error('storage locked'); },
+      delete: () => { throw new Error('хранилище заблокировано'); },
       deleteOlderThan: () => {},
     };
     const useStore = createNoteEditorStore({
@@ -368,7 +368,7 @@ describe('note editor store', () => {
     expect(store.draftError).toBe('Не удалось удалить черновик.');
   });
 
-  it('deletes the current draft when a session is confirmed as cancelled', () => {
+  it('удаляет текущий черновик при подтверждённой отмене сессии', () => {
     const { drafts, repository } = createMemoryDraftRepository();
     const useStore = createNoteEditorStore({
       repository,
@@ -387,7 +387,7 @@ describe('note editor store', () => {
   });
 });
 
-describe('cross-tab synchronization between the notes and editor stores', () => {
+describe('синхронизация хранилищ заметок и редактора между вкладками', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
@@ -436,7 +436,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     };
   };
 
-  it('updates a clean editor to the externally saved revision without a conflict', () => {
+  it('обновляет чистый редактор до внешне сохранённой ревизии без конфликта', () => {
     const { useNotesStore, useEditorStore, saveExternally } = setup([savedNote()]);
     const notesStore = useNotesStore();
     const editorStore = useEditorStore();
@@ -464,7 +464,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(editorStore.session?.baselineRevision).toBe(external.revision);
   });
 
-  it('preserves dirty local work and reports the external modification', () => {
+  it('сохраняет локальные правки и сообщает о внешнем изменении', () => {
     const { useNotesStore, useEditorStore, saveExternally } = setup([savedNote()]);
     const notesStore = useNotesStore();
     const editorStore = useEditorStore();
@@ -493,7 +493,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(saveResult).toEqual({ ok: false, reason: 'revision-conflict' });
   });
 
-  it('rejects a save from a stale baseline revision', () => {
+  it('отклоняет сохранение с устаревшей базовой ревизией', () => {
     const { useNotesStore, useEditorStore } = setup([externallySavedRevision()]);
     const notesStore = useNotesStore();
     const editorStore = useEditorStore();
@@ -515,7 +515,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(notesStore.getNote('note-1')?.revision).toBe(2);
   });
 
-  it('creates a newer revision when overwrite is chosen deliberately', () => {
+  it('создаёт новую ревизию при намеренной перезаписи', () => {
     const { useNotesStore, useEditorStore } = setup([externallySavedRevision()]);
     const notesStore = useNotesStore();
     const editorStore = useEditorStore();
@@ -539,7 +539,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(notesStore.getNote('note-1')?.revision).toBe(3);
   });
 
-  it('turns a dirty editor into an independent new note on save-as-new', () => {
+  it('сохраняет правки редактора как отдельную новую заметку', () => {
     const { useNotesStore, useEditorStore } = setup([savedNote()]);
     const notesStore = useNotesStore();
     const editorStore = useEditorStore();
@@ -564,7 +564,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(editorStore.session).toBeNull();
   });
 
-  it('moves a clean editor to the externally deleted state', () => {
+  it('переводит чистый редактор в состояние внешне удалённой заметки', () => {
     const { useNotesStore, useEditorStore } = setup([savedNote()]);
     const notesStore = useNotesStore();
     const editorStore = useEditorStore();
@@ -583,7 +583,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(editorStore.isExternallyDeleted).toBe(true);
   });
 
-  it('offers local work rescue when a dirty note is externally deleted', () => {
+  it('предлагает спасти локальные правки, когда изменённую заметку удалили извне', () => {
     const { useNotesStore, useEditorStore } = setup([savedNote()]);
     const notesStore = useNotesStore();
     const editorStore = useEditorStore();
@@ -614,7 +614,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(editorStore.isExternallyDeleted).toBe(false);
   });
 
-  it('recovers a matching draft as a new note when opening a deleted note URL', () => {
+  it('восстанавливает подходящий черновик как новую заметку при открытии ссылки удалённой заметки', () => {
     const { drafts, repository } = createMemoryDraftRepository([{
       sessionId: 'session-1',
       targetNoteId: 'note-1',
@@ -651,7 +651,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(drafts.has('session-1')).toBe(true);
   });
 
-  it('does not offer an unrecoverable draft for a deleted note', () => {
+  it('не предлагает невосстанавливаемый черновик для удалённой заметки', () => {
     const { repository } = createMemoryDraftRepository([{
       sessionId: 'session-1',
       targetNoteId: 'note-1',
@@ -670,7 +670,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(store.recoveryDraft).toBeNull();
   });
 
-  it('ignores external events for an unrelated note', () => {
+  it('игнорирует внешние события для другой заметки', () => {
     const otherNote: Note = {
       id: 'other-note',
       title: 'Другая заметка',
@@ -697,7 +697,7 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(editorStore.applyExternalChange(savedNote())).toBe('ignored');
   });
 
-  it('refreshes the home list from storage on external writes', () => {
+  it('обновляет главный список из хранилища при внешних записях', () => {
     let externalNotes = [savedNote()];
     const notesRepository: NotesRepository = {
       read: () => structuredClone(externalNotes),

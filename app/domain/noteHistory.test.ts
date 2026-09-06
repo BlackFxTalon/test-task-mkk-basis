@@ -14,8 +14,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('note history', () => {
-  it('undoes and redoes every atomic note operation', () => {
+describe('история правок заметки', () => {
+  it('отменяет и повторяет каждую атомарную операцию над заметкой', () => {
     const history = createNoteHistory(cloneNoteInput(initial));
 
     history.setTitle('Новый список');
@@ -60,7 +60,7 @@ describe('note history', () => {
     expect(history.canRedo).toBe(false);
   });
 
-  it('groups continuous typing until 700 ms of inactivity', () => {
+  it('группирует непрерывный ввод до 700 мс бездействия', () => {
     vi.useFakeTimers();
     const history = createNoteHistory(cloneNoteInput(initial));
 
@@ -87,7 +87,7 @@ describe('note history', () => {
     expect(history.state.title).toBe('Список');
   });
 
-  it('commits typing on blur and when the target field changes', () => {
+  it('фиксирует ввод при потере фокуса и смене редактируемого поля', () => {
     const history = createNoteHistory(cloneNoteInput(initial));
 
     history.setTitle('Заголовок');
@@ -103,7 +103,7 @@ describe('note history', () => {
     expect(history.state.title).toBe('Список');
   });
 
-  it('flushes pending typing before structural actions, undo, and redo', () => {
+  it('фиксирует незавершённый ввод перед структурными действиями, отменой и повтором', () => {
     const history = createNoteHistory(cloneNoteInput(initial));
 
     history.setTitle('Перед добавлением');
@@ -120,7 +120,7 @@ describe('note history', () => {
     expect(history.state.items[0]?.text).toBe('Перед undo');
   });
 
-  it('restores item identity and position after insertion and deletion', () => {
+  it('восстанавливает идентичность и позицию пунктов после вставки и удаления', () => {
     const history = createNoteHistory(cloneNoteInput(initial));
 
     history.removeItem('first');
@@ -134,7 +134,7 @@ describe('note history', () => {
     expect(history.state.items.map(item => item.id)).toEqual(['first', 'third', 'second']);
   });
 
-  it('discards the redo branch after a new change', () => {
+  it('сбрасывает ветку повтора после нового изменения', () => {
     const history = createNoteHistory(cloneNoteInput(initial));
 
     history.setItemCompleted('first', true);
@@ -147,7 +147,7 @@ describe('note history', () => {
     expect(history.canRedo).toBe(false);
   });
 
-  it('retains only the latest 50 operations', () => {
+  it('хранит только последние 50 операций', () => {
     const history = createNoteHistory(cloneNoteInput(initial));
 
     for (let index = 0; index < 51; index += 1) {
@@ -162,7 +162,7 @@ describe('note history', () => {
     expect(history.state.items[0]?.completed).toBe(true);
   });
 
-  it('clears undo and redo without changing current editor state', () => {
+  it('очищает отмену и повтор, не меняя текущее состояние редактора', () => {
     const history = createNoteHistory(cloneNoteInput(initial));
     history.setItemCompleted('first', true);
 

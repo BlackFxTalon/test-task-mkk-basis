@@ -18,7 +18,7 @@ class InMemoryNotesRepository implements NotesRepository {
   write(notes: Note[]): void {
     this.writeCalls += 1;
     if (this.failWrites) {
-      throw new Error('Storage unavailable');
+      throw new Error('Хранилище недоступно');
     }
     this.storedNotes = structuredClone(notes);
   }
@@ -58,12 +58,12 @@ class InMemoryStoragePort implements NotesStoragePort {
   }
 }
 
-describe('notes store', () => {
+describe('хранилище заметок', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it('loads saved notes sorted by the latest successful save', () => {
+  it('загружает сохранённые заметки, упорядоченные по последнему успешному сохранению', () => {
     const older: Note = {
       id: 'older',
       title: 'Раньше',
@@ -91,7 +91,7 @@ describe('notes store', () => {
     expect(store.error).toBeNull();
   });
 
-  it('creates and persists a normalized note through an explicit action', () => {
+  it('создаёт и сохраняет нормализованную заметку через явное действие', () => {
     const repository = new InMemoryNotesRepository();
     const useNotesStore = createNotesStore(createDependencies(repository));
     const store = useNotesStore();
@@ -123,7 +123,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(1);
   });
 
-  it('trims task text and removes empty rows when creating a note', () => {
+  it('обрезает текст пунктов и убирает пустые строки при создании заметки', () => {
     const repository = new InMemoryNotesRepository();
     const useNotesStore = createNotesStore(createDependencies(repository));
     const store = useNotesStore();
@@ -144,7 +144,7 @@ describe('notes store', () => {
     ]);
   });
 
-  it('rejects task text longer than 300 characters', () => {
+  it('отклоняет текст пункта длиннее 300 символов', () => {
     const repository = new InMemoryNotesRepository();
     const useNotesStore = createNotesStore(createDependencies(repository));
     const store = useNotesStore();
@@ -159,7 +159,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(0);
   });
 
-  it('rejects a blank title without changing or persisting notes', () => {
+  it('отклоняет пустой заголовок, не меняя и не сохраняя заметки', () => {
     const repository = new InMemoryNotesRepository();
     const useNotesStore = createNotesStore(createDependencies(repository));
     const store = useNotesStore();
@@ -172,7 +172,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(0);
   });
 
-  it('rejects a title longer than 120 characters', () => {
+  it('отклоняет заголовок длиннее 120 символов', () => {
     const repository = new InMemoryNotesRepository();
     const useNotesStore = createNotesStore(createDependencies(repository));
     const store = useNotesStore();
@@ -185,7 +185,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(0);
   });
 
-  it('allows duplicate titles and keeps the latest save first', () => {
+  it('допускает одинаковые заголовки и ставит последнюю заметку первой', () => {
     const repository = new InMemoryNotesRepository();
     const ids = ['first', 'second'];
     const timestamps = ['2026-09-03T12:00:00.000Z', '2026-09-03T13:00:00.000Z'];
@@ -208,7 +208,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(2);
   });
 
-  it('keeps observable state unchanged when persistence fails', () => {
+  it('не меняет наблюдаемое состояние, если сохранить не удалось', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Сохранена',
@@ -230,7 +230,7 @@ describe('notes store', () => {
     expect(store.error).toBe('Не удалось сохранить заметку. Попробуйте ещё раз.');
   });
 
-  it('updates a note, normalizes its task list, and moves it to the top', () => {
+  it('обновляет заметку, нормализует список пунктов и поднимает её наверх', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Список',
@@ -281,7 +281,7 @@ describe('notes store', () => {
     expect(repository.storedNotes).toEqual(store.notes);
   });
 
-  it('deletes an existing task item when it is omitted from an update', () => {
+  it('удаляет существующий пункт, если его нет в обновлении', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Список',
@@ -310,7 +310,7 @@ describe('notes store', () => {
     expect(repository.storedNotes).toEqual(store.notes);
   });
 
-  it('does not persist an unchanged existing note', () => {
+  it('не сохраняет заметку без изменений', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Список',
@@ -337,7 +337,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(0);
   });
 
-  it('returns a saved note by ID and reports an unknown note', () => {
+  it('возвращает сохранённую заметку по идентификатору и сообщает о неизвестной', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Список',
@@ -355,7 +355,7 @@ describe('notes store', () => {
     expect(store.getNote('missing')).toBeNull();
   });
 
-  it('does not write when updating an unknown note', () => {
+  it('не выполняет запись при обновлении неизвестной заметки', () => {
     const repository = new InMemoryNotesRepository();
     const useNotesStore = createNotesStore(createDependencies(repository));
     const store = useNotesStore();
@@ -367,7 +367,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(0);
   });
 
-  it('validates an existing note before writing', () => {
+  it('проверяет существующую заметку перед записью', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Список',
@@ -393,7 +393,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(0);
   });
 
-  it('keeps the existing note intact when an update cannot be persisted', () => {
+  it('оставляет существующую заметку нетронутой, когда обновление не удаётся сохранить', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Список',
@@ -415,7 +415,7 @@ describe('notes store', () => {
     expect(store.error).toBe('Не удалось сохранить заметку. Попробуйте ещё раз.');
   });
 
-  it('deletes and persists an existing note', () => {
+  it('удаляет существующую заметку и сохраняет изменение', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Удалить',
@@ -437,7 +437,7 @@ describe('notes store', () => {
     expect(repository.writeCalls).toBe(1);
   });
 
-  it('keeps a note observable when deletion cannot be persisted', () => {
+  it('оставляет заметку видимой, когда удаление не удаётся сохранить', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Оставить',
@@ -460,7 +460,7 @@ describe('notes store', () => {
     expect(store.error).toBe('Не удалось удалить заметку. Попробуйте ещё раз.');
   });
 
-  it('migrates a supported older schema version to the current one, preserving user notes', () => {
+  it('мигрирует поддерживаемую старую версию схемы на текущую, сохраняя заметки пользователя', () => {
     const port = new InMemoryStoragePort({
       [NOTES_STORAGE_KEY]: JSON.stringify({
         schemaVersion: 1,
@@ -489,7 +489,7 @@ describe('notes store', () => {
     expect(JSON.parse(port.getItem(NOTES_STORAGE_KEY)!)).toMatchObject({ schemaVersion: 2 });
   });
 
-  it('migrates supported storage versions in sequence with notes carried through every step', () => {
+  it('мигрирует поддерживаемые версии хранилища по цепочке, перенося заметки через каждый шаг', () => {
     const port = new InMemoryStoragePort({
       [NOTES_STORAGE_KEY]: JSON.stringify({
         schemaVersion: 1,
@@ -512,7 +512,7 @@ describe('notes store', () => {
     expect(JSON.parse(port.getItem(NOTES_STORAGE_KEY)!).schemaVersion).toBe(2);
   });
 
-  it('reports corrupted storage as an explicit blocker instead of an empty list', () => {
+  it('сообщает о повреждённом хранилище как о явном блокере вместо пустого списка', () => {
     const port = new InMemoryStoragePort({
       [NOTES_STORAGE_KEY]: '{"schemaVersion":2,',
     });
@@ -529,7 +529,7 @@ describe('notes store', () => {
     expect(port.getItem(NOTES_STORAGE_KEY)).toBe('{"schemaVersion":2,');
   });
 
-  it('reports invalid notes structure as a blocker without naming it corruption of JSON', () => {
+  it('сообщает о некорректной структуре заметок как о блокере, не называя это повреждением JSON', () => {
     const port = new InMemoryStoragePort({
       [NOTES_STORAGE_KEY]: JSON.stringify({ schemaVersion: 2, notes: { id: 'not-an-array' } }),
     });
@@ -543,7 +543,7 @@ describe('notes store', () => {
     expect(store.notes).toEqual([]);
   });
 
-  it('reports an unknown future schema version as a blocker and keeps its payload intact', () => {
+  it('сообщает о неизвестной будущей версии схемы как о блокере и не трогает её данные', () => {
     const futurePayload = JSON.stringify({
       schemaVersion: 99,
       notes: [{ id: 'from-future', title: 'Будущее', items: [], createdAt: '', updatedAt: '', revision: 7 }],
@@ -560,7 +560,7 @@ describe('notes store', () => {
     expect(port.getItem(NOTES_STORAGE_KEY)).toBe(futurePayload);
   });
 
-  it('reports a future version even when its stored payload structure is also malformed', () => {
+  it('сообщает о будущей версии, даже если структура её данных тоже некорректна', () => {
     const port = new InMemoryStoragePort({
       [NOTES_STORAGE_KEY]: '{"schemaVersion":99,"notes":"junk"}',
     });
@@ -573,7 +573,7 @@ describe('notes store', () => {
     expect(store.storageBlocker).toEqual({ kind: 'future-version' });
   });
 
-  it('blocks mutating actions while storage is blocked and leaves the payload untouched', () => {
+  it('блокирует изменяющие действия, пока хранилище заблокировано, и не трогает данные', () => {
     const futurePayload = '{"schemaVersion":99,"notes":"junk"}';
     const port = new InMemoryStoragePort({ [NOTES_STORAGE_KEY]: futurePayload });
     const repository = createBrowserNotesRepository(port);
@@ -591,7 +591,7 @@ describe('notes store', () => {
     expect(port.getItem(NOTES_STORAGE_KEY)).toBe(futurePayload);
   });
 
-  it('refresh keeps an existing blocker and does not fall back to an empty list', () => {
+  it('обновление сохраняет существующий блокер и не подменяет список пустым', () => {
     const futurePayload = JSON.stringify({ schemaVersion: 99, notes: [] });
     const port = new InMemoryStoragePort({ [NOTES_STORAGE_KEY]: futurePayload });
     const repository = createBrowserNotesRepository(port);
@@ -606,7 +606,7 @@ describe('notes store', () => {
     expect(port.getItem(NOTES_STORAGE_KEY)).toBe(futurePayload);
   });
 
-  it('resets only the saved-notes key after explicit confirmation and clears the blocker', () => {
+  it('сбрасывает только ключ сохранённых заметок после явного подтверждения и снимает блокер', () => {
     const futurePayload = JSON.stringify({ schemaVersion: 99, notes: [] });
     const port = new InMemoryStoragePort({
       [NOTES_STORAGE_KEY]: futurePayload,
@@ -630,7 +630,7 @@ describe('notes store', () => {
     expect(port.getItem('basis-notes:drafts')).toBe(JSON.stringify({ schemaVersion: 1, drafts: [] }));
   });
 
-  it('reports a failed reset instead of claiming success', () => {
+  it('сообщает о неудачном сбросе вместо ложного успеха', () => {
     const futurePayload = JSON.stringify({ schemaVersion: 99, notes: [] });
     const port = new InMemoryStoragePort({ [NOTES_STORAGE_KEY]: futurePayload });
     const repository = {
@@ -655,7 +655,7 @@ describe('notes store', () => {
     expect(port.getItem(NOTES_STORAGE_KEY)).toBe(futurePayload);
   });
 
-  it('keeps a quota write failure from deleting or silently discarding saved notes', () => {
+  it('не даёт ошибке квоты удалить или незаметно потерять сохранённые заметки', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Сохранена',
@@ -690,7 +690,7 @@ describe('notes store', () => {
     expect(JSON.parse(port.getItem(NOTES_STORAGE_KEY)!).notes[0].title).toBe('Сохранена');
   });
 
-  it('reports blocked storage access instead of calling it corruption', () => {
+  it('сообщает о заблокированном доступе к хранилищу, не называя это повреждением', () => {
     const blockedPort: NotesStoragePort = {
       getItem: () => {
         throw new DOMException('The document is sandboxed', 'SecurityError');
@@ -709,7 +709,7 @@ describe('notes store', () => {
     expect(store.isInitialized).toBe(true);
   });
 
-  it('treats a v1 payload with malformed note structure as corrupted, not as a silent migration', () => {
+  it('считает данные версии 1 с некорректной структурой заметки повреждёнными, а не мигрирует их молча', () => {
     const port = new InMemoryStoragePort({
       [NOTES_STORAGE_KEY]: JSON.stringify({
         schemaVersion: 1,
@@ -726,7 +726,7 @@ describe('notes store', () => {
     expect(store.notes).toEqual([]);
   });
 
-  it('lets the user retry and succeed after a recoverable write failure without retyping data', () => {
+  it('позволяет повторить попытку после устранимой ошибки записи без повторного ввода данных', () => {
     const existing: Note = {
       id: 'existing',
       title: 'Список',
