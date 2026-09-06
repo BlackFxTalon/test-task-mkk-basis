@@ -3,6 +3,10 @@ export default defineNuxtConfig({
   ssr: false,
   devtools: { enabled: false },
   modules: ['@pinia/nuxt', '@nuxt/eslint'],
+  components: [
+    { path: '~/components/NoteEditor', pathPrefix: false },
+    '~/components',
+  ],
   css: ['@fontsource-variable/inter', '~/assets/styles/main.scss'],
   vite: {
     css: {
