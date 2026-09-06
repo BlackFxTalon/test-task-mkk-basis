@@ -35,8 +35,15 @@ export type ResetNotesResult =
   | { ok: false, reason: 'persistence' }
 
 export interface NotesStorageBlocker {
-  kind: 'corrupted' | 'future-version'
+  kind: 'corrupted' | 'future-version' | 'blocked'
 }
+
+export const blockerMessage = (kind: NotesStorageBlocker['kind']): string =>
+  kind === 'future-version'
+    ? 'Данные заметок сохранены более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок.'
+    : kind === 'blocked'
+      ? 'Браузер запретил доступ к хранилищу. Разрешите сайту сохранять данные и обновите страницу.'
+      : 'Сохранённые данные заметок повреждены.'
 
 export interface NotesStoreDependencies {
   repository: NotesRepository
@@ -66,6 +73,12 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       return { kind: 'corrupted' }
     }
 
+    const applyReadFailure = (caught: unknown): void => {
+      notes.value = []
+      storageBlocker.value = toStorageFailure(caught)
+      error.value = blockerMessage(storageBlocker.value.kind)
+    }
+
     const initialize = (): void => {
       try {
         notes.value = sortByUpdatedAt(dependencies.repository.read())
@@ -73,11 +86,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
         storageBlocker.value = null
       }
       catch (caught) {
-        notes.value = []
-        storageBlocker.value = toStorageFailure(caught)
-        error.value = storageBlocker.value.kind === 'future-version'
-          ? 'Данные заметок сохранены более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок.'
-          : 'Сохранённые данные заметок повреждены.'
+        applyReadFailure(caught)
       }
       finally {
         isInitialized.value = true
@@ -92,10 +101,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
         return true
       }
       catch (caught) {
-        storageBlocker.value = toStorageFailure(caught)
-        error.value = storageBlocker.value.kind === 'future-version'
-          ? 'Данные заметок сохранены более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок.'
-          : 'Сохранённые данные заметок повреждены.'
+        applyReadFailure(caught)
         return false
       }
     }
@@ -119,9 +125,7 @@ export const createNotesStore = (dependencies: NotesStoreDependencies) =>
       if (storageBlocker.value === null) {
         return true
       }
-      error.value = storageBlocker.value.kind === 'future-version'
-        ? 'Данные заметок сохранены более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок.'
-        : 'Сохранённые данные заметок повреждены.'
+      error.value = blockerMessage(storageBlocker.value.kind)
       return false
     }
 

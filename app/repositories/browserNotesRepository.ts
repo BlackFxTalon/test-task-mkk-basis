@@ -1,5 +1,6 @@
 import type { Note, NotesRepository } from '../domain/note'
 import {
+  NotesStorageError,
   readNotesEnvelope,
   serializeNotesEnvelope,
 } from '../domain/notesStorage'
@@ -14,11 +15,23 @@ export interface NotesStoragePort {
 
 export const createBrowserNotesRepository = (storage: NotesStoragePort): NotesRepository => ({
   read(): Note[] {
-    const serialized = storage.getItem(NOTES_STORAGE_KEY)
+    let serialized: string | null
+    try {
+      serialized = storage.getItem(NOTES_STORAGE_KEY)
+    }
+    catch {
+      throw new NotesStorageError('blocked')
+    }
+
     const parsed = readNotesEnvelope(serialized)
     const currentSerialized = serializeNotesEnvelope(parsed.notes)
     if (serialized !== null && serialized !== currentSerialized) {
-      storage.setItem(NOTES_STORAGE_KEY, currentSerialized)
+      try {
+        storage.setItem(NOTES_STORAGE_KEY, currentSerialized)
+      }
+      catch {
+        // Мигрированные данные уже работают в этой сессии; следующая успешная запись сохранит их.
+      }
     }
     return parsed.notes
   },

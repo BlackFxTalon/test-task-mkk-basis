@@ -16,12 +16,13 @@ const {
   confirmDeletion,
 } = useNoteDeletion()
 const isResetPending = ref(false)
-const isResetting = ref(false)
 
 const blockerReason = computed(() =>
   storageBlocker.value?.kind === 'future-version'
     ? 'Сохранённые данные созданы более новой версией приложения. Обновите приложение или сбросьте сохранённые данные заметок, чтобы продолжить работу в этой версии.'
-    : 'Сохранённые данные заметок не удалось прочитать. Сброс вернёт приложение в рабочее состояние, но удалит сохранённые заметки.',
+    : storageBlocker.value?.kind === 'blocked'
+      ? 'Браузер запретил доступ к хранилищу. Сброс возможен только после возврата доступа: разрешите сайту сохранять данные и обновите страницу.'
+      : 'Сохранённые данные заметок не удалось прочитать. Сброс вернёт приложение в рабочее состояние, но удалит сохранённые заметки.',
 )
 
 const requestReset = (): void => {
@@ -32,11 +33,9 @@ const cancelReset = (): void => {
   isResetPending.value = false
 }
 
-const confirmReset = async (): Promise<void> => {
-  isResetting.value = true
-  const result = notesStore.resetSavedNotes()
-  isResetting.value = false
+const confirmReset = (): void => {
   isResetPending.value = false
+  const result = notesStore.resetSavedNotes()
 
   if (result.ok) {
     message.value = 'Сохранённые данные заметок сброшены.'
@@ -92,10 +91,9 @@ onBeforeUnmount(() => {
         v-if="storageBlocker"
         class="button button--danger"
         type="button"
-        :disabled="isResetting"
         @click="requestReset"
       >
-        {{ isResetting ? 'Сбрасываем…' : 'Сбросить данные заметок' }}
+        Сбросить данные заметок
       </button>
     </div>
 
