@@ -34,9 +34,7 @@ export const useTheme = () => {
 
     try {
       localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-    } catch {
-      // The visual preference still applies for the current tab.
-    }
+    } catch {}
   };
 
   return {

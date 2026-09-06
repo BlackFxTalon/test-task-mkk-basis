@@ -4,6 +4,7 @@ export default withNuxt(
   {
     rules: {
       semi: ['error', 'always'],
+      'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
 );

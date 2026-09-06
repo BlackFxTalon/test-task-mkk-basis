@@ -29,9 +29,7 @@ export const createBrowserNotesRepository = (storage: NotesStoragePort): NotesRe
       try {
         storage.setItem(NOTES_STORAGE_KEY, currentSerialized);
       }
-      catch {
-        // Мигрированные данные уже работают в этой сессии; следующая успешная запись сохранит их.
-      }
+      catch {}
     }
     return parsed.notes;
   },

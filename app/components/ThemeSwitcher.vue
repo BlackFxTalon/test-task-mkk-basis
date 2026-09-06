@@ -121,7 +121,7 @@ const { theme, setTheme } = useTheme();
     @include rem(height, 20px);
     fill: none;
     stroke: currentColor;
-    stroke-width: 1.8;
+    stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
   }

@@ -43,7 +43,6 @@ const confirmReset = (): void => {
 };
 
 const handleStorageChange = (event: StorageEvent): void => {
-  // A null key means storage.clear() wiped everything in another tab.
   if (event.key !== NOTES_STORAGE_KEY && event.key !== null) {
     return;
   }
@@ -172,7 +171,7 @@ onBeforeUnmount(() => {
 
 .status-message {
   margin: 0;
-  @include rem(padding, 14.4px, 16px);
+  @include rem(padding, 14px, 16px);
   border: 1px solid var(--color-brand-cyan);
   border-radius: var(--radius-control);
   background: var(--color-surface-muted);
@@ -199,7 +198,7 @@ onBeforeUnmount(() => {
 
   h2 {
     margin: 0;
-    font-size: clamp(#{to-rem(25.6px)}, 4vw, #{to-rem(36px)});
+    font-size: clamp(#{to-rem(26px)}, 4vw, #{to-rem(36px)});
   }
 
   p {

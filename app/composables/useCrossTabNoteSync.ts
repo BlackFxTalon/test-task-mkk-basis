@@ -9,7 +9,6 @@ export const useCrossTabNoteSync = (options: {
   const editorStore = useNoteEditorStore();
 
   const handleStorageChange = (event: StorageEvent): void => {
-    // A null key means storage.clear() wiped everything in another tab.
     if (event.key !== NOTES_STORAGE_KEY && event.key !== null) {
       return;
     }

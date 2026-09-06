@@ -393,7 +393,6 @@ const conflictOverwrite = (): void => {
       formError.value = 'Не удалось сохранить заметку. Попробуйте ещё раз.';
     }
     else if (result.reason === 'unchanged') {
-      // Local content already equals the external revision: nothing to overwrite.
       if (!editorStore.finishSession()) {
         activeDialog.value = null;
         return;

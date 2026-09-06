@@ -120,13 +120,13 @@ const progressLabel = computed(() => {
       display: flex;
       min-width: 0;
       align-items: center;
-      @include rem(gap, 11.2px);
+      @include rem(gap, 11px);
       line-height: 1.45;
     }
 
     input {
-      @include rem(width, 18.4px);
-      @include rem(height, 18.4px);
+      @include rem(width, 18px);
+      @include rem(height, 18px);
       flex: 0 0 auto;
       margin: 0;
       accent-color: var(--color-accent-strong);

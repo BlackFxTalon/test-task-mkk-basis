@@ -449,7 +449,6 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
       items: note.items,
     });
 
-    // Another tab saves a new revision and this tab observes it through storage.
     saveExternally(externallySavedRevision());
     notesStore.refresh();
     const external = notesStore.getNote('note-1')!;
@@ -479,7 +478,6 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     });
     editorStore.setTitle('Локальная работа');
 
-    // Another tab saves a new revision and this tab observes it through storage.
     saveExternally(externallySavedRevision());
     notesStore.refresh();
     const outcome = editorStore.applyExternalChange(notesStore.getNote('note-1'));
@@ -555,8 +553,6 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     });
     editorStore.setTitle('Спасённая работа');
 
-    // Save-as-new resolves the conflict by creating a brand-new note
-    // from the preserved local work, leaving the original untouched.
     const created = notesStore.createNote(editorStore.getInput());
     expect(created.ok).toBe(true);
     if (created.ok) {
@@ -609,7 +605,6 @@ describe('cross-tab synchronization between the notes and editor stores', () => 
     expect(editorStore.getInput().title).toBe('Уцелевшая работа');
     expect(editorStore.isDirty).toBe(true);
 
-    // The rescue path creates a brand-new note from the preserved local work.
     const created = notesStore.createNote(editorStore.getInput());
     expect(created.ok).toBe(true);
     if (created.ok) {
