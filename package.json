@@ -22,10 +22,14 @@
   "devDependencies": {
     "@nuxt/eslint": "^1.17.0",
     "@types/node": "^24.10.4",
+    "@vite-pwa/nuxt": "^1.1.1",
     "eslint": "^10.0.0",
     "sass": "^1.103.1",
     "typescript": "5.9.3",
     "vitest": "^4.1.11",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.11",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "workbox-strategies": "^7.4.1"
   }
 }
