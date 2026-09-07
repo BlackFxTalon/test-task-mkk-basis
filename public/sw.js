@@ -10,6 +10,11 @@ import { CacheFirst, NetworkFirst } from 'workbox-strategies';
 
 precacheAndRoute(self.__WB_MANIFEST);
 
+// Для injectManifest autoUpdate требует безусловного пропуска waiting-фазы:
+// новый SW активируется сразу, а клиент vite-plugin-pwa перезагружает вкладку
+// по событию activated. Сообщение SKIP_WAITING относится к prompt-режиму.
+self.skipWaiting();
+
 registerRoute(
   ({ request, url }) => request.mode === 'navigate' && url.origin === self.location.origin,
   new NetworkFirst({
@@ -26,13 +31,4 @@ registerRoute(
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
-});
-
-// Протокол vite-plugin-pwa: клиент вызывает messageSkipWaiting() ({ type: 'SKIP_WAITING' })
-// при registerType: 'autoUpdate' — новый SW активируется сразу, вкладки перезагружаются
-// обработчиком activated-события workbox-window.
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
 });
