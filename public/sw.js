@@ -12,7 +12,7 @@ precacheAndRoute(self.__WB_MANIFEST);
 
 // Для injectManifest autoUpdate требует безусловного пропуска waiting-фазы:
 // новый SW активируется сразу, а клиент vite-plugin-pwa перезагружает вкладку
-// по событию activated. Сообщение SKIP_WAITING относится к prompt-режиму.
+// по событию activated.
 self.skipWaiting();
 
 registerRoute(
